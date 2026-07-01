@@ -86,7 +86,7 @@ class AppUpdateService {
             }
           }
         }
-        downloadUrl ??= _readString(json, ['apk_url', 'download_url', 'url']);
+        downloadUrl ??= _readString(json, ['apk_url', 'download_url']);
 
         final releaseNotes = _readString(
                 json, ['body', 'notes', 'release_notes', 'description']) ??

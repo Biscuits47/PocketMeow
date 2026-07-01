@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../../data/local/app_storage.dart';
@@ -178,13 +179,23 @@ class PocketMeowStore extends ChangeNotifier {
     required RecordType type,
     DateTime? createdAt,
   }) {
+    final actualTime = createdAt ?? DateTime.now();
+    // 检查是否重复（时间差在1秒内且备注相同）
+    final isDuplicate = _records.any((item) =>
+        item.note == note.trim() &&
+        item.createdAt.difference(actualTime).inSeconds.abs() < 1);
+
+    if (isDuplicate) {
+      return;
+    }
+
     _uuidCounter++;
     final record = ExpenseRecord(
       id: '${DateTime.now().microsecondsSinceEpoch}_$_uuidCounter',
       amount: amount,
       categoryId: categoryId,
       note: note.trim(),
-      createdAt: createdAt ?? DateTime.now(),
+      createdAt: actualTime,
       type: type,
     );
     _records = [..._records, record];
@@ -357,6 +368,21 @@ class PocketMeowStore extends ChangeNotifier {
     _persist();
   }
 
+  Future<String> exportData() async {
+    final snapshot = _snapshot;
+    return jsonEncode(snapshot.toJson());
+  }
+
+  Future<void> importData(String jsonStr) async {
+    final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+    final snapshot = AppSnapshot.fromJson(map);
+    _totalBudget = snapshot.totalBudget;
+    _categories = snapshot.categories;
+    _records = snapshot.expenses;
+    notifyListeners();
+    await _persist();
+  }
+
   Future<String> dataSafetySummary() {
     return _storage.dataSafetySummary();
   }
@@ -402,12 +428,32 @@ class PocketMeowStore extends ChangeNotifier {
     );
   }
 
+  int countForCategory(
+    String categoryId, {
+    DateTime? month,
+    RecordType? type,
+  }) {
+    final source = month == null ? currentMonthRecords : recordsForMonth(month);
+    return source
+        .where(
+          (item) =>
+              item.categoryId == categoryId &&
+              (type == null || item.type == type),
+        )
+        .length;
+  }
+
   List<CategorySpendData> categoryDataForType(RecordType type) {
     final list = categoriesForType(type)
         .map(
           (category) => CategorySpendData(
             category: category,
             amount: amountForCategory(
+              category.id,
+              month: null, // use currentMonthRecords
+              type: type,
+            ),
+            count: countForCategory(
               category.id,
               month: null, // use currentMonthRecords
               type: type,
@@ -637,10 +683,12 @@ class CategorySpendData {
   CategorySpendData({
     required this.category,
     required this.amount,
+    required this.count,
   });
 
   final ExpenseCategory category;
   final double amount;
+  final int count;
 
   double shareOf(double total) {
     if (total <= 0) {

@@ -128,7 +128,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                         return null;
                       },
                       decoration: const InputDecoration(
-                        hintText: '输入金额，例如 32.5',
+                        hintText: '输入金额',
                         prefixText: '¥ ',
                       ),
                     ),
@@ -136,7 +136,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                     TextField(
                       controller: _noteController,
                       decoration: const InputDecoration(
-                        hintText: '备注，可选，例如 午餐 / 打车 / 咖啡',
+                        hintText: '备注',
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -225,12 +225,6 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                                     onPressed: _pickDate,
                                     visualDensity: VisualDensity.compact,
                                     icon: const Icon(Icons.event_outlined,
-                                        size: 20),
-                                  ),
-                                  IconButton(
-                                    onPressed: _pickTime,
-                                    visualDensity: VisualDensity.compact,
-                                    icon: const Icon(Icons.access_time_rounded,
                                         size: 20),
                                   ),
                                 ],

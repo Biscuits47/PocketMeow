@@ -27,6 +27,10 @@ dependencies:
   fl_chart: ^0.69.2
   file_picker: ^11.0.2
   excel: ^4.0.6
+  path_provider: ^2.1.6
+  open_filex: ^4.7.0
+  fast_gbk: ^1.0.0
+  csv: ^8.0.0
 
 dev_dependencies:
   flutter_test:

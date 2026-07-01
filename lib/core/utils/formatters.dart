@@ -76,6 +76,76 @@ const List<CategoryIconOption> kCategoryIconOptions = [
     label: '居家',
     icon: Icons.home_work_outlined,
   ),
+  CategoryIconOption(
+    key: 'pets',
+    label: '宠物',
+    icon: Icons.pets_outlined,
+  ),
+  CategoryIconOption(
+    key: 'book',
+    label: '书籍',
+    icon: Icons.menu_book_outlined,
+  ),
+  CategoryIconOption(
+    key: 'fitness',
+    label: '运动',
+    icon: Icons.fitness_center_outlined,
+  ),
+  CategoryIconOption(
+    key: 'music',
+    label: '音乐',
+    icon: Icons.music_note_outlined,
+  ),
+  CategoryIconOption(
+    key: 'games',
+    label: '游戏',
+    icon: Icons.sports_esports_outlined,
+  ),
+  CategoryIconOption(
+    key: 'child',
+    label: '孩子',
+    icon: Icons.child_care_outlined,
+  ),
+  CategoryIconOption(
+    key: 'car',
+    label: '汽车',
+    icon: Icons.directions_car_outlined,
+  ),
+  CategoryIconOption(
+    key: 'beauty',
+    label: '丽人',
+    icon: Icons.face_retouching_natural_outlined,
+  ),
+  CategoryIconOption(
+    key: 'electronics',
+    label: '数码',
+    icon: Icons.computer_outlined,
+  ),
+  CategoryIconOption(
+    key: 'education',
+    label: '教育',
+    icon: Icons.school_outlined,
+  ),
+  CategoryIconOption(
+    key: 'bill',
+    label: '账单',
+    icon: Icons.receipt_long_outlined,
+  ),
+  CategoryIconOption(
+    key: 'investment',
+    label: '理财',
+    icon: Icons.trending_up_outlined,
+  ),
+  CategoryIconOption(
+    key: 'communication',
+    label: '通讯',
+    icon: Icons.phone_android_outlined,
+  ),
+  CategoryIconOption(
+    key: 'social',
+    label: '社交',
+    icon: Icons.people_outline_rounded,
+  ),
 ];
 
 String formatCurrency(double value) {

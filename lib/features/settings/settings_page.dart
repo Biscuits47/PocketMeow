@@ -1,6 +1,12 @@
+import 'dart:io';
+import 'dart:math';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/state/pocket_meow_store.dart';
@@ -52,26 +58,26 @@ class SettingsPage extends StatelessWidget {
           _SettingTile(
             icon: Icons.upload_file_rounded,
             title: '导入账单',
-            subtitle: '支持导入微信账单 (Excel 格式)',
-            onTap: () => _importWeChatBill(context, store),
+            subtitle: '自动识别并导入微信或支付宝账单',
+            onTap: () => _importBill(context, store),
           ),
           _SettingTile(
-            icon: Icons.verified_user_outlined,
-            title: '数据安全',
-            subtitle: '账单保存在本地数据库，覆盖安装更新不会清空',
-            onTap: () => _showDataSafetyDialog(context, store),
+            icon: Icons.save_alt_rounded,
+            title: '导出数据',
+            subtitle: '将软件的数据打包成文件保存',
+            onTap: () => _exportData(context, store),
+          ),
+          _SettingTile(
+            icon: Icons.restore_page_rounded,
+            title: '导入数据',
+            subtitle: '读取数据文件并恢复',
+            onTap: () => _importData(context, store),
           ),
           const _AppVersionTile(),
           const _SettingTile(
             icon: Icons.notifications_outlined,
             title: '提醒设置',
             subtitle: '预算预警与每日记账提醒',
-          ),
-          _SettingTile(
-            icon: Icons.refresh_rounded,
-            title: '恢复初始状态',
-            subtitle: '保留默认分类和预算，并清空当前账单',
-            onTap: store.resetDemoData,
           ),
         ],
       ),
@@ -161,21 +167,19 @@ class _CategoryManagerCard extends StatelessWidget {
     final store = PocketMeowScope.read(context);
 
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: theme.copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          title: Text('分类管理', style: theme.textTheme.titleMedium),
+          childrenPadding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text('分类管理', style: theme.textTheme.titleLarge),
-                ),
-                FilledButton.tonal(
-                  onPressed: () => showAddCategoryDialog(context, store),
-                  child: const Text('新增分类'),
-                ),
-              ],
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.tonal(
+                onPressed: () => showAddCategoryDialog(context, store),
+                child: const Text('新增分类'),
+              ),
             ),
             const SizedBox(height: 14),
             ...categories.map(
@@ -271,15 +275,6 @@ Future<void> showAddCategoryDialog(
   final nameController = TextEditingController();
   RecordType type = RecordType.expense;
   String iconKey = 'wallet';
-  int colorValue = 0xFF63D3B1;
-  const colorOptions = [
-    0xFF63D3B1,
-    0xFF8FA8FF,
-    0xFFFF8A5B,
-    0xFFB39DDB,
-    0xFF6FC3D6,
-    0xFFE57373,
-  ];
 
   await showDialog<void>(
     context: context,
@@ -339,8 +334,8 @@ Future<void> showAddCategoryDialog(
                           });
                         },
                         child: Container(
-                          width: 72,
-                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          width: 48,
+                          height: 48,
                           decoration: BoxDecoration(
                             color: selected
                                 ? AppTheme.mint.withValues(alpha: 0.16)
@@ -352,63 +347,18 @@ Future<void> showAddCategoryDialog(
                                   : Colors.transparent,
                             ),
                           ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                option.icon,
-                                color:
-                                    selected ? AppTheme.mintDeep : AppTheme.ink,
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                option.label,
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ],
+                          alignment: Alignment.center,
+                          child: Icon(
+                            option.icon,
+                            color: selected ? AppTheme.mintDeep : AppTheme.ink,
                           ),
                         ),
                       );
                     }).toList(),
                   ),
                   const SizedBox(height: 12),
-                  DropdownButtonFormField<int>(
-                    initialValue: colorValue,
-                    items: colorOptions
-                        .map(
-                          (item) => DropdownMenuItem(
-                            value: item,
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 12,
-                                  height: 12,
-                                  decoration: BoxDecoration(
-                                    color: Color(item),
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                    '#${item.toRadixString(16).substring(2).toUpperCase()}'),
-                              ],
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) {
-                      if (value == null) {
-                        return;
-                      }
-                      setState(() {
-                        colorValue = value;
-                      });
-                    },
-                    decoration: const InputDecoration(labelText: '颜色'),
-                  ),
-                  const SizedBox(height: 12),
                   Text(
-                    '分类仅用于记账统计，不单独设置预算。',
+                    '分类仅用于记账统计，不单独设置预算。新分类的颜色将会自动随机生成。',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: AppTheme.muted,
                         ),
@@ -427,6 +377,9 @@ Future<void> showAddCategoryDialog(
                   if (name.isEmpty) {
                     return;
                   }
+                  final colorValue = Colors
+                      .primaries[Random().nextInt(Colors.primaries.length)]
+                      .toARGB32();
                   store.addCategory(
                     name: name,
                     type: type,
@@ -446,18 +399,23 @@ Future<void> showAddCategoryDialog(
   );
 }
 
-Future<void> _importWeChatBill(
-    BuildContext context, PocketMeowStore store) async {
+Future<void> _importBill(BuildContext context, PocketMeowStore store) async {
   try {
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['xlsx'],
+      allowedExtensions: ['csv', 'xlsx'],
     );
     if (result != null && result.files.isNotEmpty) {
       if (!context.mounted) return;
       _showLoadingDialog(context, message: '正在导入账单...');
-      final count =
-          await _billImportService.importWeChatBill(result.files.first, store);
+      final file = result.files.first;
+      int count = 0;
+      if (file.extension?.toLowerCase() == 'csv') {
+        count = await _billImportService.importAlipayBill(file, store);
+      } else if (file.extension?.toLowerCase() == 'xlsx') {
+        count = await _billImportService.importWeChatBill(file, store);
+      }
+
       if (context.mounted) {
         Navigator.of(context, rootNavigator: true).pop();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -475,40 +433,71 @@ Future<void> _importWeChatBill(
   }
 }
 
-Future<void> _showDataSafetyDialog(
-  BuildContext context,
-  PocketMeowStore store,
-) async {
-  _showLoadingDialog(context, message: '正在读取数据存储信息...');
+Future<void> _exportData(BuildContext context, PocketMeowStore store) async {
+  _showLoadingDialog(context, message: '正在导出数据...');
   try {
-    final summary = await store.dataSafetySummary();
-    if (!context.mounted) {
-      return;
-    }
+    final jsonStr = await store.exportData();
+    if (!context.mounted) return;
     Navigator.of(context, rootNavigator: true).pop();
-    await showDialog<void>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('数据安全说明'),
-          content: Text(summary),
-          actions: [
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('我知道了'),
-            ),
-          ],
-        );
-      },
-    );
-  } catch (_) {
-    if (!context.mounted) {
-      return;
+
+    // Save to file
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File(
+        '${dir.path}/PocketMeow_Backup_${DateTime.now().millisecondsSinceEpoch}.json');
+    await file.writeAsString(jsonStr);
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('数据已导出至: ${file.path}')),
+      );
     }
-    Navigator.of(context, rootNavigator: true).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('读取数据存储信息失败，请稍后重试。')),
+  } catch (e) {
+    if (context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('导出失败: $e')),
+      );
+    }
+  }
+}
+
+Future<void> _importData(BuildContext context, PocketMeowStore store) async {
+  try {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['json'],
     );
+    if (result != null && result.files.isNotEmpty) {
+      if (!context.mounted) return;
+      _showLoadingDialog(context, message: '正在恢复数据...');
+
+      final file = result.files.first;
+      String? jsonStr;
+      if (file.bytes != null) {
+        jsonStr = String.fromCharCodes(file.bytes!);
+      } else if (file.path != null) {
+        jsonStr = await File(file.path!).readAsString();
+      }
+
+      if (jsonStr != null) {
+        await store.importData(jsonStr);
+        if (context.mounted) {
+          Navigator.of(context, rootNavigator: true).pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('数据恢复成功')),
+          );
+        }
+      } else {
+        throw Exception('无法读取文件内容');
+      }
+    }
+  } catch (e) {
+    if (context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('导入失败: $e')),
+      );
+    }
   }
 }
 
@@ -576,10 +565,12 @@ Future<void> _checkForUpdates(BuildContext context) async {
             FilledButton(
               onPressed: () async {
                 Navigator.of(context).pop();
-                await _openReleaseDownload(
-                  context,
-                  info.downloadUrl ?? info.detailsUrl,
-                );
+                if (info.downloadUrl != null &&
+                    info.downloadUrl!.endsWith('.apk')) {
+                  await _downloadAndInstallApk(context, info.downloadUrl!);
+                } else {
+                  await _openReleaseDownload(context, info.detailsUrl);
+                }
               },
               child: Text(downloadLabel),
             ),
@@ -625,7 +616,119 @@ Future<void> _openReleaseDownload(BuildContext context, String url) async {
   final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
   if (!launched && context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('无法打开下载链接，请稍后重试。')),
+      const SnackBar(content: Text('无法打开链接，请稍后重试。')),
+    );
+  }
+}
+
+Future<void> _downloadAndInstallApk(BuildContext context, String url) async {
+  // Use a stateful dialog to show download progress
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) {
+      return _DownloadApkDialog(url: url);
+    },
+  );
+}
+
+class _DownloadApkDialog extends StatefulWidget {
+  const _DownloadApkDialog({required this.url});
+  final String url;
+
+  @override
+  State<_DownloadApkDialog> createState() => _DownloadApkDialogState();
+}
+
+class _DownloadApkDialogState extends State<_DownloadApkDialog> {
+  double _progress = 0.0;
+  String _statusText = '准备下载...';
+  bool _isDownloading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _startDownload();
+  }
+
+  Future<void> _startDownload() async {
+    try {
+      final request = http.Request('GET', Uri.parse(widget.url));
+      final response = await http.Client().send(request);
+
+      if (response.statusCode != 200 && response.statusCode != 302) {
+        throw Exception('下载失败，状态码: ${response.statusCode}');
+      }
+
+      final contentLength = response.contentLength ?? 0;
+      var downloadedBytes = 0;
+
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/PocketMeow_update.apk');
+      final sink = file.openWrite();
+
+      await for (final chunk in response.stream) {
+        sink.add(chunk);
+        downloadedBytes += chunk.length;
+        if (contentLength > 0 && mounted) {
+          setState(() {
+            _progress = downloadedBytes / contentLength;
+            _statusText = '正在下载... ${(_progress * 100).toStringAsFixed(1)}%';
+          });
+        }
+      }
+
+      await sink.close();
+
+      if (mounted) {
+        setState(() {
+          _progress = 1.0;
+          _statusText = '下载完成，准备安装...';
+          _isDownloading = false;
+        });
+      }
+
+      final result = await OpenFilex.open(file.path);
+      if (mounted) {
+        Navigator.of(context).pop(); // close dialog
+        if (result.type != ResultType.done) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('安装文件打开失败: ${result.message}')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _statusText = '下载出错: $e';
+          _isDownloading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('下载更新'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(_statusText),
+          const SizedBox(height: 16),
+          LinearProgressIndicator(
+            value: _isDownloading ? (_progress > 0 ? _progress : null) : 1.0,
+          ),
+        ],
+      ),
+      actions: [
+        if (!_isDownloading)
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('关闭'),
+          ),
+      ],
     );
   }
 }

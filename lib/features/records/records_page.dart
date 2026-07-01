@@ -34,10 +34,143 @@ class _RecordsPageState extends State<RecordsPage> {
     final selectedCategory =
         _categoryFilter == null ? null : store.categoryById(_categoryFilter!);
 
+    final now = DateTime.now();
+    final todayExpense = store.records
+        .where((r) =>
+            r.type == RecordType.expense &&
+            r.createdAt.year == now.year &&
+            r.createdAt.month == now.month &&
+            r.createdAt.day == now.day)
+        .fold(0.0, (sum, r) => sum + r.amount);
+
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
         children: [
+          InkWell(
+            onTap: () => showBudgetDialog(context, store),
+            borderRadius: BorderRadius.circular(32),
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(32),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF162127), Color(0xFF21493F)],
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x14000000),
+                    blurRadius: 28,
+                    offset: Offset(0, 18),
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '今日支出',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.72),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      formatCurrency(todayExpense),
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        value: store.budgetUsage,
+                        minHeight: 10,
+                        backgroundColor: Colors.white.withValues(alpha: 0.10),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          store.budgetUsage >= 1.0
+                              ? AppTheme.warning
+                              : Color.lerp(AppTheme.mint, AppTheme.warning,
+                                      store.budgetUsage) ??
+                                  AppTheme.mint,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '本月支出',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.58),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                formatShortCurrency(store.monthSpent),
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '总预算',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.58),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                formatShortCurrency(store.totalBudget),
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '总结余',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.58),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                formatShortCurrency(store.remainingBudget),
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
           Row(
             children: [
               Expanded(
