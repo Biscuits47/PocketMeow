@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../data/local/app_storage.dart';
 import '../../data/models/app_models.dart';
 
+enum ReportType { weekly, monthly, yearly }
+
 class PocketMeowStore extends ChangeNotifier {
   PocketMeowStore({AppStorage? storage}) : _storage = storage ?? AppStorage();
 
@@ -10,13 +12,16 @@ class PocketMeowStore extends ChangeNotifier {
 
   bool _isReady = false;
   double _totalBudget = 6000;
-  DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month);
+  DateTime _selectedDate = DateTime.now();
+  ReportType _reportType = ReportType.monthly;
   List<ExpenseCategory> _categories = const [];
   List<ExpenseRecord> _records = const [];
 
   bool get isReady => _isReady;
   double get totalBudget => _totalBudget;
-  DateTime get selectedMonth => _selectedMonth;
+  DateTime get selectedMonth => _selectedDate; // kept for compatibility
+  DateTime get selectedDate => _selectedDate;
+  ReportType get reportType => _reportType;
   List<ExpenseCategory> get categories => List.unmodifiable(_categories);
   List<ExpenseRecord> get records => List.unmodifiable(_sortedRecords);
   List<ExpenseRecord> get expenses => List.unmodifiable(_sortedRecords);
@@ -36,8 +41,17 @@ class PocketMeowStore extends ChangeNotifier {
 
   bool get canGoToNextMonth {
     final now = DateTime.now();
-    return _selectedMonth.year < now.year ||
-        (_selectedMonth.year == now.year && _selectedMonth.month < now.month);
+    if (_reportType == ReportType.yearly) {
+      return _selectedDate.year < now.year;
+    } else if (_reportType == ReportType.monthly) {
+      return _selectedDate.year < now.year ||
+          (_selectedDate.year == now.year && _selectedDate.month < now.month);
+    } else {
+      final startOfCurrentWeek =
+          _selectedDate.subtract(Duration(days: _selectedDate.weekday - 1));
+      final startOfNowWeek = now.subtract(Duration(days: now.weekday - 1));
+      return startOfCurrentWeek.isBefore(startOfNowWeek);
+    }
   }
 
   Future<void> load() async {
@@ -78,8 +92,35 @@ class PocketMeowStore extends ChangeNotifier {
     return source.where((item) => item.type == type).toList();
   }
 
+  List<ExpenseRecord> recordsForPeriod(DateTime date, ReportType type) {
+    return _sortedRecords.where((item) {
+      if (type == ReportType.yearly) {
+        return item.createdAt.year == date.year;
+      } else if (type == ReportType.monthly) {
+        return item.createdAt.year == date.year &&
+            item.createdAt.month == date.month;
+      } else {
+        // weekly
+        final startOfWeek = date.subtract(Duration(days: date.weekday - 1));
+        final endOfWeek = startOfWeek.add(const Duration(days: 6));
+        final itemDate = DateTime(
+            item.createdAt.year, item.createdAt.month, item.createdAt.day);
+        final start =
+            DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
+        final end = DateTime(endOfWeek.year, endOfWeek.month, endOfWeek.day);
+        return itemDate.isAfter(start.subtract(const Duration(days: 1))) &&
+            itemDate.isBefore(end.add(const Duration(days: 1)));
+      }
+    }).toList();
+  }
+
   List<ExpenseRecord> get currentMonthRecords {
-    return recordsForMonth(_selectedMonth);
+    return recordsForPeriod(_selectedDate, _reportType);
+  }
+
+  void setReportType(ReportType type) {
+    _reportType = type;
+    notifyListeners();
   }
 
   List<ExpenseRecord> get currentMonthExpenses {
@@ -96,9 +137,9 @@ class PocketMeowStore extends ChangeNotifier {
   }
 
   double get monthSpent =>
-      monthAmountOf(RecordType.expense, month: _selectedMonth);
+      currentMonthExpenses.fold(0.0, (sum, item) => sum + item.amount);
   double get monthIncome =>
-      monthAmountOf(RecordType.income, month: _selectedMonth);
+      currentMonthIncomes.fold(0.0, (sum, item) => sum + item.amount);
   double get monthNet => monthIncome - monthSpent;
 
   double monthSpentFor(DateTime month) =>
@@ -110,8 +151,8 @@ class PocketMeowStore extends ChangeNotifier {
 
   double get forecastEndOfMonth {
     final daysInMonth = DateTime(
-      _selectedMonth.year,
-      _selectedMonth.month + 1,
+      _selectedDate.year,
+      _selectedDate.month + 1,
       0,
     ).day;
     final referenceDay = _forecastReferenceDay;
@@ -128,6 +169,8 @@ class PocketMeowStore extends ChangeNotifier {
     return (monthSpent / _totalBudget).clamp(0.0, 1.0);
   }
 
+  int _uuidCounter = 0;
+
   void addRecord({
     required double amount,
     required String categoryId,
@@ -135,8 +178,9 @@ class PocketMeowStore extends ChangeNotifier {
     required RecordType type,
     DateTime? createdAt,
   }) {
+    _uuidCounter++;
     final record = ExpenseRecord(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      id: '${DateTime.now().microsecondsSinceEpoch}_$_uuidCounter',
       amount: amount,
       categoryId: categoryId,
       note: note.trim(),
@@ -274,12 +318,20 @@ class PocketMeowStore extends ChangeNotifier {
   }
 
   void selectMonth(DateTime month) {
-    _selectedMonth = DateTime(month.year, month.month);
+    _selectedDate = DateTime(month.year, month.month, month.day);
     notifyListeners();
   }
 
   void goToPreviousMonth() {
-    _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month - 1);
+    if (_reportType == ReportType.yearly) {
+      _selectedDate = DateTime(
+          _selectedDate.year - 1, _selectedDate.month, _selectedDate.day);
+    } else if (_reportType == ReportType.monthly) {
+      _selectedDate = DateTime(
+          _selectedDate.year, _selectedDate.month - 1, _selectedDate.day);
+    } else {
+      _selectedDate = _selectedDate.subtract(const Duration(days: 7));
+    }
     notifyListeners();
   }
 
@@ -287,7 +339,15 @@ class PocketMeowStore extends ChangeNotifier {
     if (!canGoToNextMonth) {
       return;
     }
-    _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month + 1);
+    if (_reportType == ReportType.yearly) {
+      _selectedDate = DateTime(
+          _selectedDate.year + 1, _selectedDate.month, _selectedDate.day);
+    } else if (_reportType == ReportType.monthly) {
+      _selectedDate = DateTime(
+          _selectedDate.year, _selectedDate.month + 1, _selectedDate.day);
+    } else {
+      _selectedDate = _selectedDate.add(const Duration(days: 7));
+    }
     notifyListeners();
   }
 
@@ -337,7 +397,7 @@ class PocketMeowStore extends ChangeNotifier {
   double spentForCategory(String categoryId) {
     return amountForCategory(
       categoryId,
-      month: _selectedMonth,
+      month: null, // use currentMonthRecords
       type: RecordType.expense,
     );
   }
@@ -349,7 +409,7 @@ class PocketMeowStore extends ChangeNotifier {
             category: category,
             amount: amountForCategory(
               category.id,
-              month: _selectedMonth,
+              month: null, // use currentMonthRecords
               type: type,
             ),
           ),
@@ -399,7 +459,7 @@ class PocketMeowStore extends ChangeNotifier {
   List<MonthSpendData> get recentMonthlySpend {
     final items = <MonthSpendData>[];
     for (var i = 5; i >= 0; i--) {
-      final month = DateTime(_selectedMonth.year, _selectedMonth.month - i);
+      final month = DateTime(_selectedDate.year, _selectedDate.month - i);
       items.add(
         MonthSpendData(
           month: month,
@@ -442,7 +502,7 @@ class PocketMeowStore extends ChangeNotifier {
   }
 
   double get previousMonthSpent {
-    final previous = DateTime(_selectedMonth.year, _selectedMonth.month - 1);
+    final previous = DateTime(_selectedDate.year, _selectedDate.month - 1);
     return monthSpentFor(previous);
   }
 
@@ -475,22 +535,22 @@ class PocketMeowStore extends ChangeNotifier {
   DateTime get _recentTrendAnchor {
     final now = DateTime.now();
     final isCurrentMonth =
-        _selectedMonth.year == now.year && _selectedMonth.month == now.month;
+        _selectedDate.year == now.year && _selectedDate.month == now.month;
     if (isCurrentMonth) {
       return DateTime(now.year, now.month, now.day);
     }
-    final lastDay = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0);
+    final lastDay = DateTime(_selectedDate.year, _selectedDate.month + 1, 0);
     return DateTime(lastDay.year, lastDay.month, lastDay.day);
   }
 
   int get _forecastReferenceDay {
     final now = DateTime.now();
     final isCurrentMonth =
-        _selectedMonth.year == now.year && _selectedMonth.month == now.month;
+        _selectedDate.year == now.year && _selectedDate.month == now.month;
     if (isCurrentMonth) {
       return now.day;
     }
-    return DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0).day;
+    return DateTime(_selectedDate.year, _selectedDate.month + 1, 0).day;
   }
 
   void _seedInitialData() {

@@ -31,9 +31,8 @@ class _RecordsPageState extends State<RecordsPage> {
     final store = PocketMeowScope.watch(context);
     final filtered = _applyFilters(store);
     final grouped = _groupByDay(filtered, store);
-    final selectedCategory = _categoryFilter == null
-        ? null
-        : store.categoryById(_categoryFilter!);
+    final selectedCategory =
+        _categoryFilter == null ? null : store.categoryById(_categoryFilter!);
 
     return SafeArea(
       child: ListView(
@@ -46,17 +45,9 @@ class _RecordsPageState extends State<RecordsPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('全部账单', style: theme.textTheme.headlineSmall),
-                    const SizedBox(height: 8),
-                    Text(
-                      '按天查看 ${formatMonthLabel(store.selectedMonth)} 的每一笔收支。',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: AppTheme.muted,
-                      ),
-                    ),
                   ],
                 ),
               ),
-              _MonthSwitchCompact(store: store),
               const SizedBox(width: 10),
               InkWell(
                 borderRadius: BorderRadius.circular(16),
@@ -111,16 +102,6 @@ class _RecordsPageState extends State<RecordsPage> {
             ],
           ),
           const SizedBox(height: 16),
-          _SummaryStrip(
-            count: filtered.length,
-            income: filtered
-                .where((item) => item.type == RecordType.income)
-                .fold(0.0, (sum, item) => sum + item.amount),
-            expense: filtered
-                .where((item) => item.type == RecordType.expense)
-                .fold(0.0, (sum, item) => sum + item.amount),
-          ),
-          const SizedBox(height: 16),
           if (grouped.isEmpty)
             Card(
               child: Padding(
@@ -146,16 +127,15 @@ class _RecordsPageState extends State<RecordsPage> {
 
   List<ExpenseRecord> _applyFilters(PocketMeowStore store) {
     final query = _searchController.text.trim().toLowerCase();
-    return store.currentMonthRecords.where((item) {
+    return store.records.where((item) {
       final category = store.categoryById(item.categoryId);
       final categoryName = category?.name.toLowerCase() ?? '';
       final note = item.note.toLowerCase();
       final typePass = _typeFilter == null || item.type == _typeFilter;
       final categoryPass =
           _categoryFilter == null || item.categoryId == _categoryFilter;
-      final queryPass = query.isEmpty ||
-          note.contains(query) ||
-          categoryName.contains(query);
+      final queryPass =
+          query.isEmpty || note.contains(query) || categoryName.contains(query);
       return typePass && categoryPass && queryPass;
     }).toList();
   }
@@ -189,7 +169,8 @@ class _RecordsPageState extends State<RecordsPage> {
                       width: 36,
                       height: 36,
                       decoration: BoxDecoration(
-                        color: Color(category.colorValue).withValues(alpha: 0.14),
+                        color:
+                            Color(category.colorValue).withValues(alpha: 0.14),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       alignment: Alignment.center,
@@ -241,51 +222,6 @@ class _FilterChipButton extends StatelessWidget {
   }
 }
 
-class _SummaryStrip extends StatelessWidget {
-  const _SummaryStrip({
-    required this.count,
-    required this.income,
-    required this.expense,
-  });
-
-  final int count;
-  final double income;
-  final double expense;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(child: _SummaryChip(label: '$count 笔')),
-        const SizedBox(width: 10),
-        Expanded(child: _SummaryChip(label: '+${formatShortCurrency(income)}')),
-        const SizedBox(width: 10),
-        Expanded(child: _SummaryChip(label: '-${formatShortCurrency(expense)}')),
-      ],
-    );
-  }
-}
-
-class _SummaryChip extends StatelessWidget {
-  const _SummaryChip({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 48,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE6EBEE)),
-      ),
-      alignment: Alignment.center,
-      child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
-    );
-  }
-}
-
 class _DaySection extends StatelessWidget {
   const _DaySection({required this.section});
 
@@ -303,14 +239,16 @@ class _DaySection extends StatelessWidget {
           children: [
             Row(
               children: [
-                Text(formatDayLabel(section.date), style: theme.textTheme.titleLarge),
+                Text(formatDayLabel(section.date),
+                    style: theme.textTheme.titleLarge),
                 const Spacer(),
                 Text(
                   section.net >= 0
                       ? '+${formatShortCurrency(section.net)}'
                       : '-${formatShortCurrency(section.net.abs())}',
                   style: theme.textTheme.titleMedium?.copyWith(
-                    color: section.net >= 0 ? AppTheme.mintDeep : AppTheme.muted,
+                    color:
+                        section.net >= 0 ? AppTheme.mintDeep : AppTheme.muted,
                   ),
                 ),
               ],
@@ -330,7 +268,8 @@ class _DaySection extends StatelessWidget {
                     ),
                     alignment: Alignment.centerRight,
                     padding: const EdgeInsets.only(right: 20),
-                    child: const Icon(Icons.delete_outline, color: Colors.white),
+                    child:
+                        const Icon(Icons.delete_outline, color: Colors.white),
                   ),
                   child: _RecordRow(
                     item: item,
@@ -448,12 +387,14 @@ List<_GroupedRecords> _groupByDay(
 ) {
   final map = <String, List<ExpenseRecord>>{};
   for (final item in records) {
-    final key = '${item.createdAt.year}-${item.createdAt.month}-${item.createdAt.day}';
+    final key =
+        '${item.createdAt.year}-${item.createdAt.month}-${item.createdAt.day}';
     map.putIfAbsent(key, () => []).add(item);
   }
 
   final result = map.entries.map((entry) {
-    final items = [...entry.value]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final items = [...entry.value]
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     final date = items.first.createdAt;
     final mapped = items.map((record) {
       final category = store.categoryById(record.categoryId);
@@ -462,7 +403,8 @@ List<_GroupedRecords> _groupByDay(
         title: record.note.isEmpty ? (category?.name ?? '未分类') : record.note,
         category: category?.name ?? '未分类',
         amount: record.amount,
-        time: '${record.createdAt.hour.toString().padLeft(2, '0')}:${record.createdAt.minute.toString().padLeft(2, '0')}',
+        time:
+            '${record.createdAt.hour.toString().padLeft(2, '0')}:${record.createdAt.minute.toString().padLeft(2, '0')}',
         iconKey: category?.iconKey ?? 'wallet',
         record: record,
         type: record.type,
@@ -479,39 +421,4 @@ List<_GroupedRecords> _groupByDay(
 
   result.sort((a, b) => b.date.compareTo(a.date));
   return result;
-}
-
-class _MonthSwitchCompact extends StatelessWidget {
-  const _MonthSwitchCompact({required this.store});
-
-  final PocketMeowStore store;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 42,
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE6EBEE)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            onPressed: store.goToPreviousMonth,
-            icon: const Icon(Icons.chevron_left_rounded),
-            visualDensity: VisualDensity.compact,
-          ),
-          Text(formatShortMonthLabel(store.selectedMonth)),
-          IconButton(
-            onPressed: store.canGoToNextMonth ? store.goToNextMonth : null,
-            icon: const Icon(Icons.chevron_right_rounded),
-            visualDensity: VisualDensity.compact,
-          ),
-        ],
-      ),
-    );
-  }
 }

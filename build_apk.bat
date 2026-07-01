@@ -58,12 +58,14 @@ if errorlevel 1 (
 )
 
 echo.
-echo [PocketMeow] Building release APK (this might take a few minutes, please wait)...
-call "%FLUTTER_CMD%" build apk --release -v
-if errorlevel 1 (
+echo [PocketMeow] Building release APK...
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$flutter='%FLUTTER_CMD%'; $cmdStr = '{0} build apk --release > build_out.log 2> build_err.log' -f $flutter; $proc = Start-Process cmd.exe -ArgumentList '/c', $cmdStr -WindowStyle Hidden -PassThru; $i=0; while(-not $proc.HasExited){ $i=[math]::min($i+1, 99); Write-Progress -Activity 'Building PocketMeow APK' -Status ('{0}%% Complete' -f $i) -PercentComplete $i; Start-Sleep -Milliseconds 600 }; Write-Progress -Activity 'Building PocketMeow APK' -Completed; exit $proc.ExitCode"
+set BUILD_EXIT_CODE=%ERRORLEVEL%
+
+if %BUILD_EXIT_CODE% neq 0 (
   echo.
-  echo APK build failed.
-  echo Make sure Android SDK is installed and configured.
+  echo APK build failed. Please check build_err.log and build_out.log for details.
   call :maybe_pause
   exit /b 1
 )
@@ -74,12 +76,16 @@ if not exist "%TARGET_DIR%" (
   mkdir "%TARGET_DIR%"
 )
 
+for /f "tokens=2" %%v in ('findstr "^version: " "%PROJECT_DIR%pubspec.yaml"') do set "APP_VERSION=%%v"
+set "APP_VERSION=%APP_VERSION:+=_%"
+set "APK_FILENAME=PocketMeow_v%APP_VERSION%.apk"
+
 echo [PocketMeow] Copying APK to %TARGET_DIR%...
-copy /Y "%PROJECT_DIR%build\app\outputs\flutter-apk\app-release.apk" "%TARGET_DIR%\PocketMeow.apk" >nul
+copy /Y "%PROJECT_DIR%build\app\outputs\flutter-apk\app-release.apk" "%TARGET_DIR%\%APK_FILENAME%" >nul
 
 echo.
 echo APK build and copy completed:
-echo %TARGET_DIR%\PocketMeow.apk
+echo %TARGET_DIR%\%APK_FILENAME%
 call :maybe_pause
 exit /b 0
 

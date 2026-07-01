@@ -6,8 +6,6 @@ import 'package:flutter/material.dart';
 import '../../app/state/pocket_meow_store.dart';
 import '../../app/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
-import '../../data/models/app_models.dart';
-import '../add_expense/add_expense_sheet.dart';
 import '../settings/settings_page.dart';
 
 class DataPage extends StatelessWidget {
@@ -17,7 +15,6 @@ class DataPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final store = PocketMeowScope.watch(context);
-    final recentRecords = store.currentMonthRecords.take(5).toList();
 
     return SafeArea(
       child: ListView(
@@ -41,35 +38,32 @@ class DataPage extends StatelessWidget {
                   ],
                 ),
               ),
-              _MonthSwitchCompact(store: store),
+              _PeriodSwitchCompact(store: store),
               const SizedBox(width: 10),
               _SettingsShortcut(onTap: () => openSettingsPage(context)),
             ],
           ),
+          const SizedBox(height: 16),
+          SegmentedButton<ReportType>(
+            segments: const [
+              ButtonSegment(value: ReportType.weekly, label: Text('周报')),
+              ButtonSegment(value: ReportType.monthly, label: Text('月报')),
+              ButtonSegment(value: ReportType.yearly, label: Text('年报')),
+            ],
+            selected: {store.reportType},
+            onSelectionChanged: (set) {
+              store.setReportType(set.first);
+            },
+          ),
           const SizedBox(height: 20),
           Text(
-            formatMonthLabel(store.selectedMonth),
+            formatPeriodLabel(store.selectedDate, store.reportType),
             style: theme.textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
           ),
           const SizedBox(height: 12),
           _OverviewCard(theme: theme, store: store),
           const SizedBox(height: 16),
           _QuickStatsGrid(store: store),
-          const SizedBox(height: 24),
-          const _SectionHeader(
-            title: '预算与洞察',
-            subtitle: '先看本月预算节奏，再看系统给你的提醒。',
-          ),
-          const SizedBox(height: 12),
-          _TotalBudgetProgressCard(
-            totalBudget: store.totalBudget,
-            spent: store.monthSpent,
-            remainingBudget: store.remainingBudget,
-          ),
-          const SizedBox(height: 16),
-          _MonthComparisonCard(store: store),
-          const SizedBox(height: 16),
-          _InsightCard(message: store.primaryInsight),
           const SizedBox(height: 24),
           const _SectionHeader(
             title: '图表分析',
@@ -83,42 +77,6 @@ class DataPage extends StatelessWidget {
           _MonthlyHistoryCard(store: store),
           const SizedBox(height: 16),
           _InsightsSummaryCard(store: store),
-          const SizedBox(height: 24),
-          const _SectionHeader(
-            title: '最近账单',
-            subtitle: '保留最近 5 笔，方便快速回看和编辑。',
-          ),
-          const SizedBox(height: 12),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: recentRecords.isEmpty
-                  ? Text(
-                      '当前月份还没有记录，点击底部 + 开始记第一笔。',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: AppTheme.muted,
-                      ),
-                    )
-                  : Column(
-                      children: recentRecords
-                          .map(
-                            (record) => _ExpenseTile(
-                              expense: record,
-                              onTap: () {
-                                showModalBottomSheet<void>(
-                                  context: context,
-                                  isScrollControlled: true,
-                                  backgroundColor: Colors.transparent,
-                                  builder: (_) =>
-                                      AddExpenseSheet(expense: record),
-                                );
-                              },
-                            ),
-                          )
-                          .toList(),
-                    ),
-            ),
-          ),
         ],
       ),
     );
@@ -187,83 +145,97 @@ class _OverviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(32),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF162127), Color(0xFF21493F)],
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 28,
-            offset: Offset(0, 18),
+    final periodName = store.reportType == ReportType.yearly
+        ? '年'
+        : (store.reportType == ReportType.weekly ? '周' : '月');
+
+    return InkWell(
+      onTap: () => showBudgetDialog(context, store),
+      borderRadius: BorderRadius.circular(32),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(32),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF162127), Color(0xFF21493F)],
           ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '当月总览',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: Colors.white.withValues(alpha: 0.72),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              formatCurrency(store.monthNet.abs()),
-              style: theme.textTheme.headlineMedium?.copyWith(
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              store.monthNet >= 0
-                  ? '本月净结余 ${formatShortCurrency(store.monthNet)}'
-                  : '本月净支出 ${formatShortCurrency(store.monthNet.abs())}',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: Colors.white.withValues(alpha: 0.82),
-              ),
-            ),
-            const SizedBox(height: 18),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: LinearProgressIndicator(
-                value: store.budgetUsage,
-                minHeight: 10,
-                backgroundColor: Colors.white.withValues(alpha: 0.10),
-                valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.mint),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: _MetricBlock(
-                    label: '本月收入',
-                    value: formatShortCurrency(store.monthIncome),
-                  ),
-                ),
-                Expanded(
-                  child: _MetricBlock(
-                    label: '本月支出',
-                    value: formatShortCurrency(store.monthSpent),
-                  ),
-                ),
-                Expanded(
-                  child: _MetricBlock(
-                    label: '预算剩余',
-                    value: formatShortCurrency(store.remainingBudget),
-                  ),
-                ),
-              ],
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x14000000),
+              blurRadius: 28,
+              offset: Offset(0, 18),
             ),
           ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '当$periodName总览',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.white.withValues(alpha: 0.72),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                formatCurrency(store.monthNet.abs()),
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                store.monthNet >= 0
+                    ? '本$periodName净结余 ${formatShortCurrency(store.monthNet)}'
+                    : '本$periodName净支出 ${formatShortCurrency(store.monthNet.abs())}',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.white.withValues(alpha: 0.82),
+                ),
+              ),
+              const SizedBox(height: 18),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  value: store.budgetUsage,
+                  minHeight: 10,
+                  backgroundColor: Colors.white.withValues(alpha: 0.10),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    store.budgetUsage >= 1.0
+                        ? AppTheme.warning
+                        : Color.lerp(AppTheme.mint, AppTheme.warning,
+                                store.budgetUsage) ??
+                            AppTheme.mint,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: _MetricBlock(
+                      label: '本$periodName收入',
+                      value: formatShortCurrency(store.monthIncome),
+                    ),
+                  ),
+                  Expanded(
+                    child: _MetricBlock(
+                      label: '本$periodName支出',
+                      value: formatShortCurrency(store.monthSpent),
+                    ),
+                  ),
+                  Expanded(
+                    child: _MetricBlock(
+                      label: '总预算',
+                      value: formatShortCurrency(store.totalBudget),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -281,6 +253,9 @@ class _QuickStatsGrid extends StatelessWidget {
       builder: (context, constraints) {
         final cardWidth = (constraints.maxWidth - 12) / 2;
         final forecastText = store.projectedBalance >= 0 ? '预计结余' : '预计超支';
+        final periodName = store.reportType == ReportType.yearly
+            ? '年'
+            : (store.reportType == ReportType.weekly ? '周' : '月');
 
         return Wrap(
           spacing: 12,
@@ -289,14 +264,14 @@ class _QuickStatsGrid extends StatelessWidget {
             _QuickStatCard(
               width: cardWidth,
               icon: Icons.arrow_downward_rounded,
-              title: '本月收入',
+              title: '本$periodName收入',
               value: formatShortCurrency(store.monthIncome),
               tone: AppTheme.mintDeep,
             ),
             _QuickStatCard(
               width: cardWidth,
               icon: Icons.arrow_upward_rounded,
-              title: '本月支出',
+              title: '本$periodName支出',
               value: formatShortCurrency(store.monthSpent),
               tone: AppTheme.warning,
             ),
@@ -410,180 +385,6 @@ class _MetricBlock extends StatelessWidget {
   }
 }
 
-class _TotalBudgetProgressCard extends StatelessWidget {
-  const _TotalBudgetProgressCard({
-    required this.totalBudget,
-    required this.spent,
-    required this.remainingBudget,
-  });
-
-  final double totalBudget;
-  final double spent;
-  final double remainingBudget;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final progress =
-        totalBudget <= 0 ? 0.0 : (spent / totalBudget).clamp(0.0, 1.0);
-    final statusText = remainingBudget >= 0
-        ? '剩余 ${formatShortCurrency(remainingBudget)}'
-        : '已超支 ${formatShortCurrency(remainingBudget.abs())}';
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: AppTheme.mint.withValues(alpha: 0.16),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  alignment: Alignment.center,
-                  child: const Icon(
-                    Icons.account_balance_wallet_outlined,
-                    size: 18,
-                    color: AppTheme.mintDeep,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text('本月总预算', style: theme.textTheme.titleMedium),
-                ),
-                Text(
-                  '${formatShortCurrency(spent)} / ${formatShortCurrency(totalBudget)}',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: AppTheme.muted,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 10,
-                backgroundColor: const Color(0xFFF0F3F4),
-                valueColor:
-                    const AlwaysStoppedAnimation<Color>(AppTheme.mintDeep),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    statusText,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: AppTheme.muted,
-                    ),
-                  ),
-                ),
-                Text(
-                  '已用 ${(progress * 100).round()}%',
-                  style: theme.textTheme.titleSmall,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MonthComparisonCard extends StatelessWidget {
-  const _MonthComparisonCard({required this.store});
-
-  final PocketMeowStore store;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('月度对比', style: theme.textTheme.titleLarge),
-            const SizedBox(height: 8),
-            Text(
-              store.monthComparisonText,
-              style:
-                  theme.textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _FlowStat(
-                    label: '收入',
-                    value: formatShortCurrency(store.monthIncome),
-                    valueColor: AppTheme.mintDeep,
-                  ),
-                ),
-                Expanded(
-                  child: _FlowStat(
-                    label: '支出',
-                    value: formatShortCurrency(store.monthSpent),
-                    valueColor: AppTheme.warning,
-                  ),
-                ),
-                Expanded(
-                  child: _FlowStat(
-                    label: '净额',
-                    value: formatShortCurrency(store.monthNet),
-                    valueColor: store.monthNet >= 0
-                        ? AppTheme.mintDeep
-                        : AppTheme.warning,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _FlowStat extends StatelessWidget {
-  const _FlowStat({
-    required this.label,
-    required this.value,
-    required this.valueColor,
-  });
-
-  final String label;
-  final String value;
-  final Color valueColor;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: theme.textTheme.bodySmall),
-        const SizedBox(height: 6),
-        Text(
-          value,
-          style: theme.textTheme.titleMedium?.copyWith(color: valueColor),
-        ),
-      ],
-    );
-  }
-}
-
 class _SpendingDistributionCard extends StatelessWidget {
   const _SpendingDistributionCard({required this.store});
 
@@ -594,6 +395,9 @@ class _SpendingDistributionCard extends StatelessWidget {
     final theme = Theme.of(context);
     final items = store.categorySpendData.take(4).toList();
     final total = store.monthSpent;
+    final periodName = store.reportType == ReportType.yearly
+        ? '年'
+        : (store.reportType == ReportType.weekly ? '周' : '月');
 
     return Card(
       child: Padding(
@@ -601,7 +405,7 @@ class _SpendingDistributionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('当月支出分布', style: theme.textTheme.titleLarge),
+            Text('当$periodName支出分布', style: theme.textTheme.titleLarge),
             const SizedBox(height: 18),
             if (items.isEmpty)
               Container(
@@ -822,9 +626,9 @@ class _InsightsSummaryCard extends StatelessWidget {
     );
     final insights = [
       if (topCategory != null)
-        '${topCategory.category.name} 是本月最大支出，占比 ${(topCategory.shareOf(store.monthSpent) * 100).round()}%',
+        '${topCategory.category.name} 是本期最大支出，占比 ${(topCategory.shareOf(store.monthSpent) * 100).round()}%',
       '最近一周 ${weekdayLabel(topDay.date.weekday)} 的支出最高，花了 ${formatShortCurrency(topDay.expense)}',
-      '按当前节奏，本月预计${store.projectedBalance >= 0 ? '结余' : '超支'} ${formatShortCurrency(store.projectedBalance.abs())}',
+      '按当前节奏，本期预计${store.projectedBalance >= 0 ? '结余' : '超支'} ${formatShortCurrency(store.projectedBalance.abs())}',
     ];
 
     return Card(
@@ -968,122 +772,6 @@ class _MonthlyHistoryCard extends StatelessWidget {
   }
 }
 
-class _InsightCard extends StatelessWidget {
-  const _InsightCard({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: AppTheme.mint.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(Icons.auto_graph_rounded,
-                  color: AppTheme.mintDeep),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('智能提示', style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 6),
-                  Text(
-                    message,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: AppTheme.muted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ExpenseTile extends StatelessWidget {
-  const _ExpenseTile({
-    required this.expense,
-    required this.onTap,
-  });
-
-  final ExpenseRecord expense;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final store = PocketMeowScope.read(context);
-    final category = store.categoryById(expense.categoryId);
-    if (category == null) {
-      return const SizedBox.shrink();
-    }
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF1F4F6),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child:
-                  Icon(iconForCategory(category.iconKey), color: AppTheme.ink),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    expense.note.isEmpty ? category.name : expense.note,
-                    style: theme.textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${category.name} · ${formatDayTime(expense.createdAt)}',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ],
-              ),
-            ),
-            Text(
-              formatSignedAmount(expense.amount, expense.type),
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: expense.type == RecordType.income
-                    ? AppTheme.mintDeep
-                    : AppTheme.ink,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _LegendDot extends StatelessWidget {
   const _LegendDot({
     required this.color,
@@ -1112,8 +800,8 @@ class _LegendDot extends StatelessWidget {
   }
 }
 
-class _MonthSwitchCompact extends StatelessWidget {
-  const _MonthSwitchCompact({required this.store});
+class _PeriodSwitchCompact extends StatelessWidget {
+  const _PeriodSwitchCompact({required this.store});
 
   final PocketMeowStore store;
 
@@ -1135,7 +823,7 @@ class _MonthSwitchCompact extends StatelessWidget {
             icon: const Icon(Icons.chevron_left_rounded),
             visualDensity: VisualDensity.compact,
           ),
-          Text(formatShortMonthLabel(store.selectedMonth)),
+          Text(formatShortPeriodLabel(store.selectedDate, store.reportType)),
           IconButton(
             onPressed: store.canGoToNextMonth ? store.goToNextMonth : null,
             icon: const Icon(Icons.chevron_right_rounded),

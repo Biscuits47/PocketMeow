@@ -31,6 +31,7 @@ class AppUpdateInfo {
 
 class AppUpdateService {
   static const _defaultManifestUrls = [
+    'https://api.github.com/repos/Biscuits47/PocketMeow/releases/latest',
     'https://cdn.jsdelivr.net/gh/Biscuits47/PocketMeow@main/update/latest.json',
     'https://fastly.jsdelivr.net/gh/Biscuits47/PocketMeow@main/update/latest.json',
     'https://raw.githubusercontent.com/Biscuits47/PocketMeow/main/update/latest.json',
@@ -47,7 +48,10 @@ class AppUpdateService {
       try {
         final response = await http.get(
           Uri.parse(manifestUrl),
-          headers: const {'Accept': 'application/json'},
+          headers: const {
+            'Accept': 'application/json',
+            'User-Agent': 'PocketMeow-App',
+          },
         );
 
         if (response.statusCode != 200) {
@@ -57,20 +61,36 @@ class AppUpdateService {
 
         final json = jsonDecode(response.body) as Map<String, dynamic>;
         final latestVersion = _normalizeVersion(
-          (json['version'] as String?) ??
+          (json['tag_name'] as String?) ??
+              (json['version'] as String?) ??
               (json['latest_version'] as String?) ??
               currentVersion,
         );
         final latestBuild = _parseBuildNumber(json['build']) ??
             _parseBuildNumber(json['latest_build']) ??
             currentBuild;
-        final detailsUrl =
-            _readString(json, ['page_url', 'details_url', 'details']) ??
-                manifestUrl;
-        final downloadUrl =
-            _readString(json, ['apk_url', 'download_url', 'url']);
-        final releaseNotes =
-            _readString(json, ['notes', 'release_notes', 'description']) ?? '';
+        final detailsUrl = _readString(
+                json, ['html_url', 'page_url', 'details_url', 'details']) ??
+            manifestUrl;
+
+        String? downloadUrl;
+        if (json['assets'] is List) {
+          final assets = json['assets'] as List;
+          for (final asset in assets) {
+            if (asset is Map<String, dynamic>) {
+              final url = asset['browser_download_url'] as String?;
+              if (url != null && url.endsWith('.apk')) {
+                downloadUrl = url;
+                break;
+              }
+            }
+          }
+        }
+        downloadUrl ??= _readString(json, ['apk_url', 'download_url', 'url']);
+
+        final releaseNotes = _readString(
+                json, ['body', 'notes', 'release_notes', 'description']) ??
+            '';
         final publishedAt = DateTime.tryParse(
           _readString(json, ['published_at', 'updated_at']) ?? '',
         );

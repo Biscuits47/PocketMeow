@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/state/pocket_meow_store.dart';
 import '../../data/models/app_models.dart';
 
 class CategoryIconOption {
@@ -88,6 +89,31 @@ String formatShortCurrency(double value) {
     return '$sign¥${absValue.toInt()}';
   }
   return '$sign¥${absValue.toStringAsFixed(2)}';
+}
+
+String formatPeriodLabel(DateTime date, ReportType type) {
+  if (type == ReportType.yearly) {
+    return '${date.year} 年';
+  } else if (type == ReportType.monthly) {
+    return '${date.year} 年 ${date.month} 月';
+  } else {
+    final startOfWeek = date.subtract(Duration(days: date.weekday - 1));
+    final endOfWeek = startOfWeek.add(const Duration(days: 6));
+    if (startOfWeek.month == endOfWeek.month) {
+      return '${startOfWeek.year} 年 ${startOfWeek.month} 月 ${startOfWeek.day} 日 - ${endOfWeek.day} 日';
+    }
+    return '${startOfWeek.year} 年 ${startOfWeek.month} 月 ${startOfWeek.day} 日 - ${endOfWeek.month} 月 ${endOfWeek.day} 日';
+  }
+}
+
+String formatShortPeriodLabel(DateTime date, ReportType type) {
+  if (type == ReportType.yearly) {
+    return '${date.year} 年';
+  } else if (type == ReportType.monthly) {
+    return '${date.month} 月';
+  } else {
+    return '第 ${((date.day - 1) ~/ 7) + 1} 周';
+  }
 }
 
 String formatMonthLabel(DateTime date) {

@@ -74,7 +74,8 @@ class _MonthComparisonCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               store.monthComparisonText,
-              style: theme.textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
+              style:
+                  theme.textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
             ),
             const SizedBox(height: 16),
             Row(
@@ -97,8 +98,9 @@ class _MonthComparisonCard extends StatelessWidget {
                   child: _FlowStat(
                     label: '净额',
                     value: formatShortCurrency(store.monthNet),
-                    valueColor:
-                        store.monthNet >= 0 ? AppTheme.mintDeep : AppTheme.warning,
+                    valueColor: store.monthNet >= 0
+                        ? AppTheme.mintDeep
+                        : AppTheme.warning,
                   ),
                 ),
               ],
@@ -217,7 +219,8 @@ class _SpendingDistributionCard extends StatelessWidget {
                                       height: 10,
                                       decoration: BoxDecoration(
                                         color: Color(item.category.colorValue),
-                                        borderRadius: BorderRadius.circular(999),
+                                        borderRadius:
+                                            BorderRadius.circular(999),
                                       ),
                                     ),
                                     const SizedBox(width: 10),
@@ -283,15 +286,18 @@ class _TrendCard extends StatelessWidget {
                     show: true,
                     drawVerticalLine: false,
                     horizontalInterval: maxAmount == 0 ? 25 : maxAmount / 4,
-                    getDrawingHorizontalLine: (_) => FlLine(
-                      color: const Color(0xFFE8EDF0),
+                    getDrawingHorizontalLine: (_) => const FlLine(
+                      color: Color(0xFFE8EDF0),
                       strokeWidth: 1,
                     ),
                   ),
                   titlesData: FlTitlesData(
-                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    topTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
+                    leftTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
                     bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
@@ -324,7 +330,8 @@ class _TrendCard extends StatelessWidget {
                       ),
                       spots: List.generate(
                         data.length,
-                        (index) => FlSpot(index.toDouble(), data[index].expense),
+                        (index) =>
+                            FlSpot(index.toDouble(), data[index].expense),
                       ),
                     ),
                     LineChartBarData(
@@ -346,8 +353,8 @@ class _TrendCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            Row(
-              children: const [
+            const Row(
+              children: [
                 _LegendDot(color: AppTheme.warning, label: '支出'),
                 SizedBox(width: 16),
                 _LegendDot(color: AppTheme.mintDeep, label: '收入'),
@@ -368,9 +375,8 @@ class _InsightsSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final topCategory = store.categorySpendData.isEmpty
-        ? null
-        : store.categorySpendData.first;
+    final topCategory =
+        store.categorySpendData.isEmpty ? null : store.categorySpendData.first;
     final topDay = store.recentDailySpend.reduce(
       (a, b) => a.expense >= b.expense ? a : b,
     );
@@ -457,16 +463,19 @@ class _MonthlyHistoryCard extends StatelessWidget {
                     show: true,
                     drawVerticalLine: false,
                     horizontalInterval: maxAmount == 0 ? 25 : maxAmount / 4,
-                    getDrawingHorizontalLine: (_) => FlLine(
-                      color: const Color(0xFFE8EDF0),
+                    getDrawingHorizontalLine: (_) => const FlLine(
+                      color: Color(0xFFE8EDF0),
                       strokeWidth: 1,
                     ),
                   ),
                   borderData: FlBorderData(show: false),
                   titlesData: FlTitlesData(
-                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    topTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
+                    leftTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
                     bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
@@ -511,8 +520,8 @@ class _MonthlyHistoryCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            Row(
-              children: const [
+            const Row(
+              children: [
                 _LegendDot(color: AppTheme.warning, label: '支出'),
                 SizedBox(width: 16),
                 _LegendDot(color: AppTheme.mintDeep, label: '收入'),

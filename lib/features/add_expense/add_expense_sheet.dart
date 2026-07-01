@@ -4,6 +4,7 @@ import '../../app/state/pocket_meow_store.dart';
 import '../../app/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/models/app_models.dart';
+import '../settings/settings_page.dart';
 
 class AddExpenseSheet extends StatefulWidget {
   const AddExpenseSheet({
@@ -89,15 +90,6 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                       isEditing ? '编辑这笔账' : '快速记一笔',
                       style: theme.textTheme.headlineSmall,
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      isEditing
-                          ? '修改金额、备注或分类，保存后会立即更新统计。'
-                          : '保持最少输入，让记账像发一条消息一样轻松。',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: AppTheme.muted,
-                      ),
-                    ),
                     const SizedBox(height: 16),
                     SegmentedButton<RecordType>(
                       segments: const [
@@ -117,7 +109,8 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                         setState(() {
                           _recordType = selection.first;
                           final next = store.categoriesForType(_recordType);
-                          _selectedCategory = next.isNotEmpty ? next.first.id : null;
+                          _selectedCategory =
+                              next.isNotEmpty ? next.first.id : null;
                         });
                       },
                     ),
@@ -152,23 +145,34 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                     Wrap(
                       spacing: 10,
                       runSpacing: 10,
-                      children: categories.map((category) {
-                        final selected = category.id == _selectedCategory;
-                        return ChoiceChip(
-                          avatar: Icon(
-                            iconForCategory(category.iconKey),
-                            size: 18,
-                            color: selected ? AppTheme.mintDeep : AppTheme.muted,
-                          ),
-                          label: Text(category.name),
-                          selected: selected,
-                          onSelected: (_) {
-                            setState(() {
-                              _selectedCategory = category.id;
-                            });
+                      children: [
+                        ...categories.map((category) {
+                          final selected = category.id == _selectedCategory;
+                          return ChoiceChip(
+                            avatar: Icon(
+                              iconForCategory(category.iconKey),
+                              size: 18,
+                              color:
+                                  selected ? AppTheme.mintDeep : AppTheme.muted,
+                            ),
+                            label: Text(category.name),
+                            selected: selected,
+                            onSelected: (_) {
+                              setState(() {
+                                _selectedCategory = category.id;
+                              });
+                            },
+                          );
+                        }),
+                        ActionChip(
+                          avatar: const Icon(Icons.add_rounded,
+                              size: 18, color: AppTheme.mintDeep),
+                          label: const Text('新分类'),
+                          onPressed: () {
+                            showAddCategoryDialog(context, store);
                           },
-                        );
-                      }).toList(),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 22),
                     Row(
@@ -183,7 +187,8 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                                 color: const Color(0xFFF1F4F6),
                                 borderRadius: BorderRadius.circular(20),
                               ),
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
                               child: Row(
                                 children: [
                                   const Icon(
@@ -194,8 +199,10 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           '${formatMonthLabel(_selectedDateTime)} · ${formatDayLabel(_selectedDateTime)}',
@@ -206,7 +213,8 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                                         const SizedBox(height: 2),
                                         Text(
                                           '时间 ${_formatTime(_selectedDateTime)}',
-                                          style: theme.textTheme.bodySmall?.copyWith(
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
                                             color: AppTheme.muted,
                                           ),
                                         ),
@@ -216,12 +224,14 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                                   IconButton(
                                     onPressed: _pickDate,
                                     visualDensity: VisualDensity.compact,
-                                    icon: const Icon(Icons.event_outlined, size: 20),
+                                    icon: const Icon(Icons.event_outlined,
+                                        size: 20),
                                   ),
                                   IconButton(
                                     onPressed: _pickTime,
                                     visualDensity: VisualDensity.compact,
-                                    icon: const Icon(Icons.access_time_rounded, size: 20),
+                                    icon: const Icon(Icons.access_time_rounded,
+                                        size: 20),
                                   ),
                                 ],
                               ),

@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -5,10 +6,12 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../app/state/pocket_meow_store.dart';
 import '../../app/theme/app_theme.dart';
 import '../../core/services/app_update_service.dart';
+import '../../core/services/bill_import_service.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/models/app_models.dart';
 
 final _appUpdateService = AppUpdateService();
+final _billImportService = BillImportService();
 
 Future<void> openSettingsPage(BuildContext context) {
   return Navigator.of(context).push(
@@ -42,24 +45,16 @@ class SettingsPage extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
         children: [
-          Text('我的', style: theme.textTheme.headlineSmall),
-          const SizedBox(height: 8),
-          Text(
-            '预算、分类、数据安全和更新都放在这里。',
-            style: theme.textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
-          ),
+          Text('设置', style: theme.textTheme.headlineSmall),
           const SizedBox(height: 20),
-          _ProfileCard(
-              totalBudget: store.totalBudget, monthSpent: store.monthSpent),
-          const SizedBox(height: 16),
-          _SettingTile(
-            icon: Icons.savings_outlined,
-            title: '月预算设置',
-            subtitle: '当前总预算 ${formatShortCurrency(store.totalBudget)}',
-            onTap: () => _showBudgetDialog(context, store),
-          ),
           _CategoryManagerCard(categories: store.categories),
           const SizedBox(height: 16),
+          _SettingTile(
+            icon: Icons.upload_file_rounded,
+            title: '导入账单',
+            subtitle: '支持导入微信账单 (Excel 格式)',
+            onTap: () => _importWeChatBill(context, store),
+          ),
           _SettingTile(
             icon: Icons.verified_user_outlined,
             title: '数据安全',
@@ -79,56 +74,6 @@ class SettingsPage extends StatelessWidget {
             onTap: store.resetDemoData,
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ProfileCard extends StatelessWidget {
-  const _ProfileCard({
-    required this.totalBudget,
-    required this.monthSpent,
-  });
-
-  final double totalBudget;
-  final double monthSpent;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Row(
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: AppTheme.mint.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Icon(Icons.pets_rounded, color: AppTheme.mintDeep),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('钱喵', style: theme.textTheme.titleLarge),
-                  const SizedBox(height: 4),
-                  Text(
-                    '本月已花 ${formatShortCurrency(monthSpent)} / 预算 ${formatShortCurrency(totalBudget)}',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: AppTheme.muted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -227,7 +172,7 @@ class _CategoryManagerCard extends StatelessWidget {
                   child: Text('分类管理', style: theme.textTheme.titleLarge),
                 ),
                 FilledButton.tonal(
-                  onPressed: () => _showAddCategoryDialog(context, store),
+                  onPressed: () => showAddCategoryDialog(context, store),
                   child: const Text('新增分类'),
                 ),
               ],
@@ -280,7 +225,7 @@ class _CategoryManagerCard extends StatelessWidget {
   }
 }
 
-Future<void> _showBudgetDialog(
+Future<void> showBudgetDialog(
   BuildContext context,
   PocketMeowStore store,
 ) async {
@@ -319,7 +264,7 @@ Future<void> _showBudgetDialog(
   );
 }
 
-Future<void> _showAddCategoryDialog(
+Future<void> showAddCategoryDialog(
   BuildContext context,
   PocketMeowStore store,
 ) async {
@@ -499,6 +444,35 @@ Future<void> _showAddCategoryDialog(
       );
     },
   );
+}
+
+Future<void> _importWeChatBill(
+    BuildContext context, PocketMeowStore store) async {
+  try {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['xlsx'],
+    );
+    if (result != null && result.files.isNotEmpty) {
+      if (!context.mounted) return;
+      _showLoadingDialog(context, message: '正在导入账单...');
+      final count =
+          await _billImportService.importWeChatBill(result.files.first, store);
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('成功导入 $count 笔账单')),
+        );
+      }
+    }
+  } catch (e) {
+    if (context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('导入失败: $e')),
+      );
+    }
+  }
 }
 
 Future<void> _showDataSafetyDialog(
