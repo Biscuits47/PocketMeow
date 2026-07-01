@@ -88,6 +88,12 @@ class AppUpdateService {
         }
         downloadUrl ??= _readString(json, ['apk_url', 'download_url']);
 
+        // 使用国内镜像加速下载 GitHub Release
+        if (downloadUrl != null &&
+            downloadUrl.startsWith('https://github.com/')) {
+          downloadUrl = 'https://mirror.ghproxy.com/$downloadUrl';
+        }
+
         final releaseNotes = _readString(
                 json, ['body', 'notes', 'release_notes', 'description']) ??
             '';

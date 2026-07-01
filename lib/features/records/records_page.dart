@@ -7,32 +7,14 @@ import '../../data/models/app_models.dart';
 import '../add_expense/add_expense_sheet.dart';
 import '../settings/settings_page.dart';
 
-class RecordsPage extends StatefulWidget {
+class RecordsPage extends StatelessWidget {
   const RecordsPage({super.key});
-
-  @override
-  State<RecordsPage> createState() => _RecordsPageState();
-}
-
-class _RecordsPageState extends State<RecordsPage> {
-  final TextEditingController _searchController = TextEditingController();
-  RecordType? _typeFilter;
-  String? _categoryFilter;
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final store = PocketMeowScope.watch(context);
-    final filtered = _applyFilters(store);
-    final grouped = _groupByDay(filtered, store);
-    final selectedCategory =
-        _categoryFilter == null ? null : store.categoryById(_categoryFilter!);
+    final grouped = _groupByDay(store.records, store);
 
     final now = DateTime.now();
     final todayExpense = store.records
@@ -43,314 +25,235 @@ class _RecordsPageState extends State<RecordsPage> {
             r.createdAt.day == now.day)
         .fold(0.0, (sum, r) => sum + r.amount);
 
+    final todayIncome = store.records
+        .where((r) =>
+            r.type == RecordType.income &&
+            r.createdAt.year == now.year &&
+            r.createdAt.month == now.month &&
+            r.createdAt.day == now.day)
+        .fold(0.0, (sum, r) => sum + r.amount);
+
+    final actualMonthSpent = store.records
+        .where((r) =>
+            r.type == RecordType.expense &&
+            r.createdAt.year == now.year &&
+            r.createdAt.month == now.month &&
+            !r.excludeFromBudget)
+        .fold(0.0, (sum, r) => sum + r.amount);
+
+    final actualBudgetUsage = store.totalBudget <= 0
+        ? 0.0
+        : (actualMonthSpent / store.totalBudget).clamp(0.0, 1.0);
+
+    final actualRemainingBudget = store.totalBudget - actualMonthSpent;
+
     return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          InkWell(
-            onTap: () => showBudgetDialog(context, store),
-            borderRadius: BorderRadius.circular(32),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(32),
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFF162127), Color(0xFF21493F)],
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x14000000),
-                    blurRadius: 28,
-                    offset: Offset(0, 18),
-                  ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '今日支出',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: Colors.white.withValues(alpha: 0.72),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+            child: Text('账单', style: theme.textTheme.headlineMedium),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 120),
+              children: [
+                InkWell(
+                  onTap: () => showBudgetDialog(context, store),
+                  borderRadius: BorderRadius.circular(32),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(32),
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFF162127), Color(0xFF21493F)],
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      formatCurrency(todayExpense),
-                      style: theme.textTheme.headlineMedium?.copyWith(
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(999),
-                      child: LinearProgressIndicator(
-                        value: store.budgetUsage,
-                        minHeight: 10,
-                        backgroundColor: Colors.white.withValues(alpha: 0.10),
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          store.budgetUsage >= 1.0
-                              ? AppTheme.warning
-                              : Color.lerp(AppTheme.mint, AppTheme.warning,
-                                      store.budgetUsage) ??
-                                  AppTheme.mint,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '本月支出',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: Colors.white.withValues(alpha: 0.58),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                formatShortCurrency(store.monthSpent),
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '总预算',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: Colors.white.withValues(alpha: 0.58),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                formatShortCurrency(store.totalBudget),
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '总结余',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: Colors.white.withValues(alpha: 0.58),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                formatShortCurrency(store.remainingBudget),
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
-                          ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x14000000),
+                          blurRadius: 28,
+                          offset: Offset(0, 18),
                         ),
                       ],
                     ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('全部账单', style: theme.textTheme.headlineSmall),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () => openSettingsPage(context),
-                child: Ink(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFE6EBEE)),
-                  ),
-                  child: const Icon(Icons.settings_outlined),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          TextField(
-            controller: _searchController,
-            onChanged: (_) => setState(() {}),
-            decoration: const InputDecoration(
-              hintText: '搜索备注或分类',
-              prefixIcon: Icon(Icons.search_rounded),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _FilterChipButton(
-                label: '全部',
-                selected: _typeFilter == null,
-                onTap: () => setState(() => _typeFilter = null),
-              ),
-              _FilterChipButton(
-                label: '支出',
-                selected: _typeFilter == RecordType.expense,
-                onTap: () => setState(() => _typeFilter = RecordType.expense),
-              ),
-              _FilterChipButton(
-                label: '收入',
-                selected: _typeFilter == RecordType.income,
-                onTap: () => setState(() => _typeFilter = RecordType.income),
-              ),
-              _FilterChipButton(
-                label: selectedCategory?.name ?? '分类筛选',
-                selected: _categoryFilter != null,
-                onTap: () => _showCategoryFilter(context, store),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (grouped.isEmpty)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Text(
-                  '当前筛选条件下没有账单记录。',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: AppTheme.muted,
-                  ),
-                ),
-              ),
-            ),
-          ...grouped.map(
-            (section) => Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: _DaySection(section: section),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  List<ExpenseRecord> _applyFilters(PocketMeowStore store) {
-    final query = _searchController.text.trim().toLowerCase();
-    return store.records.where((item) {
-      final category = store.categoryById(item.categoryId);
-      final categoryName = category?.name.toLowerCase() ?? '';
-      final note = item.note.toLowerCase();
-      final typePass = _typeFilter == null || item.type == _typeFilter;
-      final categoryPass =
-          _categoryFilter == null || item.categoryId == _categoryFilter;
-      final queryPass =
-          query.isEmpty || note.contains(query) || categoryName.contains(query);
-      return typePass && categoryPass && queryPass;
-    }).toList();
-  }
-
-  Future<void> _showCategoryFilter(
-    BuildContext context,
-    PocketMeowStore store,
-  ) async {
-    final result = await showModalBottomSheet<String?>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: ListView(
-              shrinkWrap: true,
-              padding: const EdgeInsets.all(20),
-              children: [
-                ListTile(
-                  title: const Text('全部分类'),
-                  onTap: () => Navigator.of(context).pop(''),
-                ),
-                ...store.categories.map(
-                  (category) => ListTile(
-                    leading: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color:
-                            Color(category.colorValue).withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      alignment: Alignment.center,
-                      child: Icon(
-                        iconForCategory(category.iconKey),
-                        size: 18,
-                        color: Color(category.colorValue),
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '今日支出',
+                                      style:
+                                          theme.textTheme.bodyMedium?.copyWith(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.72),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      formatCurrency(todayExpense),
+                                      style: theme.textTheme.headlineMedium
+                                          ?.copyWith(
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '今日收入',
+                                      style:
+                                          theme.textTheme.bodyMedium?.copyWith(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.72),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      formatCurrency(todayIncome),
+                                      style: theme.textTheme.headlineMedium
+                                          ?.copyWith(
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 18),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: LinearProgressIndicator(
+                              value: actualBudgetUsage,
+                              minHeight: 10,
+                              backgroundColor:
+                                  Colors.white.withValues(alpha: 0.10),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                actualBudgetUsage >= 1.0
+                                    ? Colors.red
+                                    : Color.lerp(AppTheme.mint, Colors.red,
+                                            actualBudgetUsage) ??
+                                        AppTheme.mint,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '本月支出',
+                                      style:
+                                          theme.textTheme.bodySmall?.copyWith(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.58),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      formatShortCurrency(actualMonthSpent),
+                                      style:
+                                          theme.textTheme.titleMedium?.copyWith(
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '总预算',
+                                      style:
+                                          theme.textTheme.bodySmall?.copyWith(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.58),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      formatShortCurrency(store.totalBudget),
+                                      style:
+                                          theme.textTheme.titleMedium?.copyWith(
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '总结余',
+                                      style:
+                                          theme.textTheme.bodySmall?.copyWith(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.58),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      formatShortCurrency(
+                                          actualRemainingBudget),
+                                      style:
+                                          theme.textTheme.titleMedium?.copyWith(
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
-                    title: Text(category.name),
-                    subtitle: Text(category.type.label),
-                    onTap: () => Navigator.of(context).pop(category.id),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                if (grouped.isEmpty)
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: Text(
+                        '没有账单记录。',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: AppTheme.muted,
+                        ),
+                      ),
+                    ),
+                  ),
+                ...grouped.map(
+                  (section) => Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: _DaySection(section: section),
                   ),
                 ),
               ],
             ),
           ),
-        );
-      },
-    );
-
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _categoryFilter = (result == null || result.isEmpty) ? null : result;
-    });
-  }
-}
-
-class _FilterChipButton extends StatelessWidget {
-  const _FilterChipButton({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => onTap(),
+        ],
+      ),
     );
   }
 }
@@ -375,14 +278,30 @@ class _DaySection extends StatelessWidget {
                 Text(formatDayLabel(section.date),
                     style: theme.textTheme.titleLarge),
                 const Spacer(),
-                Text(
-                  section.net >= 0
-                      ? '+${formatShortCurrency(section.net)}'
-                      : '-${formatShortCurrency(section.net.abs())}',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color:
-                        section.net >= 0 ? AppTheme.mintDeep : AppTheme.muted,
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (section.expense > 0)
+                      Text(
+                        '- ${formatShortCurrency(section.expense)}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: AppTheme.muted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    if (section.expense > 0 && section.income > 0)
+                      const SizedBox(width: 8),
+                    if (section.income > 0)
+                      Text(
+                        '+ ${formatShortCurrency(section.income)}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: AppTheme.muted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                  ],
                 ),
               ],
             ),
@@ -479,11 +398,43 @@ class _RecordRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(item.title, style: theme.textTheme.titleMedium),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        item.title,
+                        style: theme.textTheme.titleMedium,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (item.record.excludeFromBudget) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE9EEF1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          '不计入预算',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontSize: 10,
+                            color: AppTheme.muted,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
                 const SizedBox(height: 4),
                 Text(
-                  '${item.category} · ${item.time}',
+                  item.record.note.isNotEmpty
+                      ? '${item.time} · ${item.record.note}'
+                      : item.time,
                   style: theme.textTheme.bodySmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -506,12 +457,14 @@ class _GroupedRecords {
   const _GroupedRecords({
     required this.date,
     required this.items,
-    required this.net,
+    required this.expense,
+    required this.income,
   });
 
   final DateTime date;
   final List<_RecordItem> items;
-  final double net;
+  final double expense;
+  final double income;
 }
 
 List<_GroupedRecords> _groupByDay(
@@ -533,7 +486,7 @@ List<_GroupedRecords> _groupByDay(
       final category = store.categoryById(record.categoryId);
       return _RecordItem(
         id: record.id,
-        title: record.note.isEmpty ? (category?.name ?? '未分类') : record.note,
+        title: category?.name ?? '未分类',
         category: category?.name ?? '未分类',
         amount: record.amount,
         time:
@@ -549,7 +502,12 @@ List<_GroupedRecords> _groupByDay(
     final expense = items
         .where((item) => item.type == RecordType.expense)
         .fold(0.0, (sum, item) => sum + item.amount);
-    return _GroupedRecords(date: date, items: mapped, net: income - expense);
+    return _GroupedRecords(
+      date: date,
+      items: mapped,
+      expense: expense,
+      income: income,
+    );
   }).toList();
 
   result.sort((a, b) => b.date.compareTo(a.date));

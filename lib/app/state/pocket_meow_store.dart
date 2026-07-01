@@ -143,12 +143,16 @@ class PocketMeowStore extends ChangeNotifier {
       currentMonthIncomes.fold(0.0, (sum, item) => sum + item.amount);
   double get monthNet => monthIncome - monthSpent;
 
+  double get budgetConsumed => currentMonthExpenses
+      .where((item) => !item.excludeFromBudget)
+      .fold(0.0, (sum, item) => sum + item.amount);
+
   double monthSpentFor(DateTime month) =>
       monthAmountOf(RecordType.expense, month: month);
   double monthIncomeFor(DateTime month) =>
       monthAmountOf(RecordType.income, month: month);
 
-  double get remainingBudget => _totalBudget - monthSpent;
+  double get remainingBudget => _totalBudget - budgetConsumed;
 
   double get forecastEndOfMonth {
     final daysInMonth = DateTime(
@@ -157,7 +161,8 @@ class PocketMeowStore extends ChangeNotifier {
       0,
     ).day;
     final referenceDay = _forecastReferenceDay;
-    final dailyAverage = referenceDay == 0 ? 0.0 : monthSpent / referenceDay;
+    final dailyAverage =
+        referenceDay == 0 ? 0.0 : budgetConsumed / referenceDay;
     return dailyAverage * daysInMonth;
   }
 
@@ -167,7 +172,7 @@ class PocketMeowStore extends ChangeNotifier {
     if (_totalBudget <= 0) {
       return 0;
     }
-    return (monthSpent / _totalBudget).clamp(0.0, 1.0);
+    return (budgetConsumed / _totalBudget).clamp(0.0, 1.0);
   }
 
   int _uuidCounter = 0;
@@ -178,6 +183,7 @@ class PocketMeowStore extends ChangeNotifier {
     required String note,
     required RecordType type,
     DateTime? createdAt,
+    bool excludeFromBudget = false,
   }) {
     final actualTime = createdAt ?? DateTime.now();
     // 检查是否重复（时间差在1秒内且备注相同）
@@ -197,6 +203,7 @@ class PocketMeowStore extends ChangeNotifier {
       note: note.trim(),
       createdAt: actualTime,
       type: type,
+      excludeFromBudget: excludeFromBudget,
     );
     _records = [..._records, record];
     notifyListeners();
@@ -208,6 +215,7 @@ class PocketMeowStore extends ChangeNotifier {
     required String categoryId,
     required String note,
     DateTime? createdAt,
+    bool excludeFromBudget = false,
   }) {
     addRecord(
       amount: amount,
@@ -215,6 +223,7 @@ class PocketMeowStore extends ChangeNotifier {
       note: note,
       type: RecordType.expense,
       createdAt: createdAt,
+      excludeFromBudget: excludeFromBudget,
     );
   }
 
@@ -223,6 +232,7 @@ class PocketMeowStore extends ChangeNotifier {
     required String categoryId,
     required String note,
     DateTime? createdAt,
+    bool excludeFromBudget = false,
   }) {
     addRecord(
       amount: amount,
@@ -230,6 +240,7 @@ class PocketMeowStore extends ChangeNotifier {
       note: note,
       type: RecordType.income,
       createdAt: createdAt,
+      excludeFromBudget: excludeFromBudget,
     );
   }
 
@@ -240,6 +251,7 @@ class PocketMeowStore extends ChangeNotifier {
     required String note,
     required RecordType type,
     DateTime? createdAt,
+    bool? excludeFromBudget,
   }) {
     _records = _records
         .map(
@@ -250,6 +262,8 @@ class PocketMeowStore extends ChangeNotifier {
                   note: note.trim(),
                   type: type,
                   createdAt: createdAt ?? item.createdAt,
+                  excludeFromBudget:
+                      excludeFromBudget ?? item.excludeFromBudget,
                 )
               : item,
         )
@@ -444,20 +458,22 @@ class PocketMeowStore extends ChangeNotifier {
   }
 
   List<CategorySpendData> categoryDataForType(RecordType type) {
+    final records = currentMonthRecords.where((item) => item.type == type);
+    final amountMap = <String, double>{};
+    final countMap = <String, int>{};
+
+    for (final item in records) {
+      amountMap[item.categoryId] =
+          (amountMap[item.categoryId] ?? 0) + item.amount;
+      countMap[item.categoryId] = (countMap[item.categoryId] ?? 0) + 1;
+    }
+
     final list = categoriesForType(type)
         .map(
           (category) => CategorySpendData(
             category: category,
-            amount: amountForCategory(
-              category.id,
-              month: null, // use currentMonthRecords
-              type: type,
-            ),
-            count: countForCategory(
-              category.id,
-              month: null, // use currentMonthRecords
-              type: type,
-            ),
+            amount: amountMap[category.id] ?? 0.0,
+            count: countMap[category.id] ?? 0,
           ),
         )
         .where((item) => item.amount > 0)
@@ -473,31 +489,29 @@ class PocketMeowStore extends ChangeNotifier {
   List<DailySpendData> get recentDailySpend {
     final anchor = _recentTrendAnchor;
     final items = <DailySpendData>[];
+
+    final expenses = currentMonthExpenses;
+    final incomes = currentMonthIncomes;
+
     for (var i = 6; i >= 0; i--) {
       final day = DateTime(anchor.year, anchor.month, anchor.day - i);
-      final expense = currentMonthExpenses
-          .where(
-            (item) =>
-                item.createdAt.year == day.year &&
-                item.createdAt.month == day.month &&
-                item.createdAt.day == day.day,
-          )
-          .fold(0.0, (sum, item) => sum + item.amount);
-      final income = currentMonthIncomes
-          .where(
-            (item) =>
-                item.createdAt.year == day.year &&
-                item.createdAt.month == day.month &&
-                item.createdAt.day == day.day,
-          )
-          .fold(0.0, (sum, item) => sum + item.amount);
-      items.add(
-        DailySpendData(
-          date: day,
-          expense: expense,
-          income: income,
-        ),
-      );
+      double exp = 0;
+      double inc = 0;
+      for (final e in expenses) {
+        if (e.createdAt.day == day.day &&
+            e.createdAt.month == day.month &&
+            e.createdAt.year == day.year) {
+          exp += e.amount;
+        }
+      }
+      for (final e in incomes) {
+        if (e.createdAt.day == day.day &&
+            e.createdAt.month == day.month &&
+            e.createdAt.year == day.year) {
+          inc += e.amount;
+        }
+      }
+      items.add(DailySpendData(date: day, expense: exp, income: inc));
     }
     return items;
   }
@@ -509,12 +523,82 @@ class PocketMeowStore extends ChangeNotifier {
       items.add(
         MonthSpendData(
           month: month,
-          expense: monthSpentFor(month),
-          income: monthIncomeFor(month),
+          expense: 0, // will compute below
+          income: 0,
         ),
       );
     }
+
+    final oldestMonth = DateTime(_selectedDate.year, _selectedDate.month - 5);
+    final oldestDate = DateTime(oldestMonth.year, oldestMonth.month, 1);
+
+    for (final item in _sortedRecords) {
+      if (item.createdAt.isBefore(oldestDate)) {
+        break; // _sortedRecords is descending, so we can break early
+      }
+      for (final monthData in items) {
+        if (item.createdAt.year == monthData.month.year &&
+            item.createdAt.month == monthData.month.month) {
+          if (item.type == RecordType.expense) {
+            monthData.expense += item.amount;
+          } else {
+            monthData.income += item.amount;
+          }
+          break;
+        }
+      }
+    }
+
     return items;
+  }
+
+  // --- Previous Period Comparison ---
+  double get previousPeriodExpense {
+    final prevRecords = _getPreviousPeriodRecords();
+    return prevRecords
+        .where((r) => r.type == RecordType.expense && !r.excludeFromBudget)
+        .fold(0.0, (sum, r) => sum + r.amount);
+  }
+
+  double get previousPeriodIncome {
+    final prevRecords = _getPreviousPeriodRecords();
+    return prevRecords
+        .where((r) => r.type == RecordType.income)
+        .fold(0.0, (sum, r) => sum + r.amount);
+  }
+
+  double get previousPeriodNet => previousPeriodIncome - previousPeriodExpense;
+
+  List<ExpenseRecord> _getPreviousPeriodRecords() {
+    final d = _selectedDate;
+    switch (_reportType) {
+      case ReportType.weekly:
+        // 上一周
+        final prevWeek = d.subtract(const Duration(days: 7));
+        final start = prevWeek.subtract(Duration(days: prevWeek.weekday - 1));
+        final end = start
+            .add(const Duration(days: 6, hours: 23, minutes: 59, seconds: 59));
+        return _records
+            .where((r) =>
+                r.createdAt
+                    .isAfter(start.subtract(const Duration(seconds: 1))) &&
+                r.createdAt.isBefore(end.add(const Duration(seconds: 1))))
+            .toList();
+      case ReportType.monthly:
+        // 上个月
+        final prevMonth = DateTime(d.year, d.month - 1);
+        return _records
+            .where((r) =>
+                r.createdAt.year == prevMonth.year &&
+                r.createdAt.month == prevMonth.month)
+            .toList();
+      case ReportType.yearly:
+        // 上一年
+        final prevYear = DateTime(d.year - 1);
+        return _records
+            .where((r) => r.createdAt.year == prevYear.year)
+            .toList();
+    }
   }
 
   String get primaryInsight {
@@ -720,8 +804,8 @@ class MonthSpendData {
   });
 
   final DateTime month;
-  final double expense;
-  final double income;
+  double expense;
+  double income;
 
   double get net => income - expense;
 }

@@ -38,6 +38,7 @@ class ExpenseRecord {
     required this.note,
     required this.createdAt,
     required this.type,
+    this.excludeFromBudget = false,
   });
 
   final String id;
@@ -46,6 +47,7 @@ class ExpenseRecord {
   final String note;
   final DateTime createdAt;
   final RecordType type;
+  final bool excludeFromBudget;
 
   ExpenseRecord copyWith({
     String? id,
@@ -54,6 +56,7 @@ class ExpenseRecord {
     String? note,
     DateTime? createdAt,
     RecordType? type,
+    bool? excludeFromBudget,
   }) {
     return ExpenseRecord(
       id: id ?? this.id,
@@ -62,6 +65,7 @@ class ExpenseRecord {
       note: note ?? this.note,
       createdAt: createdAt ?? this.createdAt,
       type: type ?? this.type,
+      excludeFromBudget: excludeFromBudget ?? this.excludeFromBudget,
     );
   }
 
@@ -73,6 +77,7 @@ class ExpenseRecord {
       'note': note,
       'createdAt': createdAt.toIso8601String(),
       'type': type.key,
+      'excludeFromBudget': excludeFromBudget,
     };
   }
 
@@ -84,6 +89,7 @@ class ExpenseRecord {
       note: json['note'] as String? ?? '',
       createdAt: DateTime.parse(json['createdAt'] as String),
       type: RecordTypeX.fromKey(json['type'] as String?),
+      excludeFromBudget: json['excludeFromBudget'] as bool? ?? false,
     );
   }
 }

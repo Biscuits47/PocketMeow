@@ -17,51 +17,63 @@ class DataPage extends StatelessWidget {
     final store = PocketMeowScope.watch(context);
 
     return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Text('数据', style: theme.textTheme.headlineMedium),
+                    Expanded(
+                      child: Text('数据', style: theme.textTheme.headlineMedium),
+                    ),
+                    _SettingsShortcut(onTap: () => openSettingsPage(context)),
                   ],
                 ),
-              ),
-              _PeriodSwitchCompact(store: store),
-              const SizedBox(width: 10),
-              _SettingsShortcut(onTap: () => openSettingsPage(context)),
-            ],
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<ReportType>(
+                    segments: const [
+                      ButtonSegment(value: ReportType.weekly, label: Text('周报')),
+                      ButtonSegment(value: ReportType.monthly, label: Text('月报')),
+                      ButtonSegment(value: ReportType.yearly, label: Text('年报')),
+                    ],
+                    selected: {store.reportType},
+                    onSelectionChanged: (set) {
+                      store.setReportType(set.first);
+                    },
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('图表分析', style: theme.textTheme.titleLarge),
+                    _PeriodSwitchCompact(store: store),
+                  ],
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
-          SegmentedButton<ReportType>(
-            segments: const [
-              ButtonSegment(value: ReportType.weekly, label: Text('周报')),
-              ButtonSegment(value: ReportType.monthly, label: Text('月报')),
-              ButtonSegment(value: ReportType.yearly, label: Text('年报')),
-            ],
-            selected: {store.reportType},
-            onSelectionChanged: (set) {
-              store.setReportType(set.first);
-            },
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
+              children: [
+                _SpendingDistributionCard(store: store),
+                const SizedBox(height: 16),
+                _TrendCard(store: store),
+                const SizedBox(height: 16),
+                _MonthlyHistoryCard(store: store),
+                const SizedBox(height: 16),
+                _InsightsSummaryCard(store: store),
+              ],
+            ),
           ),
-          const SizedBox(height: 20),
-          Text(
-            formatPeriodLabel(store.selectedDate, store.reportType),
-            style: theme.textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
-          ),
-          const SizedBox(height: 12),
-          Text('图表分析', style: theme.textTheme.titleLarge),
-          const SizedBox(height: 12),
-          _SpendingDistributionCard(store: store),
-          const SizedBox(height: 16),
-          _TrendCard(store: store),
-          const SizedBox(height: 16),
-          _MonthlyHistoryCard(store: store),
-          const SizedBox(height: 16),
-          _InsightsSummaryCard(store: store),
         ],
       ),
     );
@@ -372,19 +384,42 @@ class _InsightsSummaryCard extends StatelessWidget {
 
   final PocketMeowStore store;
 
+  String _formatComparison(double current, double previous, String label) {
+    if (previous == 0 && current == 0) return '$label没有变化';
+    if (previous == 0) return '$label增加 ${formatShortCurrency(current)}';
+    
+    final diff = current - previous;
+    if (diff == 0) return '$label与上期持平';
+    
+    final action = diff > 0 ? '增加' : '减少';
+    return '$label$action ${formatShortCurrency(diff.abs())}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final topCategory =
         store.categorySpendData.isEmpty ? null : store.categorySpendData.first;
-    final topDay = store.recentDailySpend.reduce(
-      (a, b) => a.expense >= b.expense ? a : b,
-    );
+    
+    final periodName = store.reportType == ReportType.yearly
+        ? '年'
+        : (store.reportType == ReportType.weekly ? '周' : '月');
+
+    final currentExp = store.budgetConsumed;
+    final currentInc = store.monthIncome;
+    final currentNet = currentInc - currentExp;
+
+    final prevExp = store.previousPeriodExpense;
+    final prevInc = store.previousPeriodIncome;
+    final prevNet = store.previousPeriodNet;
+
     final insights = [
       if (topCategory != null)
-        '${topCategory.category.name} 是本期最大支出，占比 ${(topCategory.shareOf(store.monthSpent) * 100).round()}%',
-      '最近一周 ${weekdayLabel(topDay.date.weekday)} 的支出最高，花了 ${formatShortCurrency(topDay.expense)}',
-      '按当前节奏，本期预计${store.projectedBalance >= 0 ? '结余' : '超支'} ${formatShortCurrency(store.projectedBalance.abs())}',
+        '${topCategory.category.name} 是本$periodName最大支出，占比 ${(topCategory.shareOf(store.monthSpent) * 100).round()}%',
+      
+      '与上$periodName相比，${_formatComparison(currentExp, prevExp, '支出')}，${_formatComparison(currentInc, prevInc, '收入')}。',
+      
+      '本$periodName总结余为 ${formatShortCurrency(currentNet)}，相比上$periodName${currentNet >= prevNet ? '增加' : '减少'} ${formatShortCurrency((currentNet - prevNet).abs())}。'
     ];
 
     return Card(

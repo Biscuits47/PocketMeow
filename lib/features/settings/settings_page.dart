@@ -142,9 +142,8 @@ class _AppVersionTile extends StatelessWidget {
       future: PackageInfo.fromPlatform(),
       builder: (context, snapshot) {
         final info = snapshot.data;
-        final versionText = info == null
-            ? '正在读取当前版本...'
-            : '当前版本 v${info.version} (${info.buildNumber})';
+        final versionText =
+            info == null ? '正在读取当前版本...' : '当前版本 v${info.version}';
         return _SettingTile(
           icon: Icons.system_update_alt_rounded,
           title: '检查更新',
@@ -522,9 +521,9 @@ Future<void> _checkForUpdates(BuildContext context) async {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('当前版本：${info.currentVersion} (${info.currentBuild})'),
+                Text('当前版本：${info.currentVersion}'),
                 const SizedBox(height: 6),
-                Text('最新版本：${info.latestVersion} (${info.latestBuild})'),
+                Text('最新版本：${info.latestVersion}'),
                 if (info.publishedAt != null) ...[
                   const SizedBox(height: 6),
                   Text('发布时间：${_formatUpdateTime(info.publishedAt!)}'),

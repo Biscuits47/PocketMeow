@@ -25,6 +25,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
   String? _selectedCategory;
   RecordType _recordType = RecordType.expense;
   DateTime _selectedDateTime = DateTime.now();
+  bool _excludeFromBudget = false;
   bool _initialized = false;
 
   @override
@@ -86,9 +87,21 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                       ),
                     ),
                     const SizedBox(height: 18),
-                    Text(
-                      isEditing ? '编辑这笔账' : '快速记一笔',
-                      style: theme.textTheme.headlineSmall,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          isEditing ? '编辑这笔账' : '快速记一笔',
+                          style: theme.textTheme.headlineSmall,
+                        ),
+                        if (isEditing)
+                          IconButton(
+                            onPressed: () => _confirmDelete(context, store),
+                            icon: const Icon(Icons.delete_outline_rounded,
+                                color: Colors.red),
+                            tooltip: '删除此账单',
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 16),
                     SegmentedButton<RecordType>(
@@ -140,7 +153,31 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                       ),
                     ),
                     const SizedBox(height: 20),
-                    Text('选择分类', style: theme.textTheme.titleMedium),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('选择分类', style: theme.textTheme.titleMedium),
+                        if (_recordType == RecordType.expense)
+                          Row(
+                            children: [
+                              Text(
+                                '不计入预算',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: AppTheme.muted,
+                                ),
+                              ),
+                              Switch(
+                                value: _excludeFromBudget,
+                                onChanged: (val) =>
+                                    setState(() => _excludeFromBudget = val),
+                                activeColor: AppTheme.mintDeep,
+                                activeTrackColor:
+                                    AppTheme.mint.withValues(alpha: 0.3),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
                     const SizedBox(height: 12),
                     Wrap(
                       spacing: 10,
@@ -253,6 +290,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                                     note: _noteController.text,
                                     type: _recordType,
                                     createdAt: _selectedDateTime,
+                                    excludeFromBudget: _excludeFromBudget,
                                   );
                                 } else if (_recordType == RecordType.expense) {
                                   store.addExpense(
@@ -260,6 +298,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                                     categoryId: _selectedCategory!,
                                     note: _noteController.text,
                                     createdAt: _selectedDateTime,
+                                    excludeFromBudget: _excludeFromBudget,
                                   );
                                 } else {
                                   store.addIncome(
@@ -267,6 +306,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                                     categoryId: _selectedCategory!,
                                     note: _noteController.text,
                                     createdAt: _selectedDateTime,
+                                    excludeFromBudget: _excludeFromBudget,
                                   );
                                 }
                                 Navigator.of(context).pop();
@@ -339,5 +379,32 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
     final hh = value.hour.toString().padLeft(2, '0');
     final mm = value.minute.toString().padLeft(2, '0');
     return '$hh:$mm';
+  }
+
+  Future<void> _confirmDelete(
+      BuildContext context, PocketMeowStore store) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除账单'),
+        content: const Text('确定要删除这笔账单吗？此操作无法恢复。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      store.deleteRecord(widget.expense!.id);
+      Navigator.of(context).pop();
+    }
   }
 }
