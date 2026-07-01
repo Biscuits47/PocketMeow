@@ -1,12 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
-import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 
 import '../models/app_models.dart';
 
 class AppStorage {
+  static const databaseName = 'pocket_meow.db';
   Database? _database;
 
   Future<Database> get database async {
@@ -22,8 +22,7 @@ class AppStorage {
       databaseFactory = databaseFactoryFfi;
     }
 
-    final dbPath = await getDatabasesPath();
-    final path = p.join(dbPath, 'pocket_meow.db');
+    final path = await databasePath();
     _database = await openDatabase(
       path,
       version: 1,
@@ -60,14 +59,30 @@ class AppStorage {
     return _database!;
   }
 
+  Future<String> databasePath() async {
+    final dbPath = await getDatabasesPath();
+    return p.join(dbPath, databaseName);
+  }
+
+  Future<String> dataSafetySummary() async {
+    if (kIsWeb) {
+      return '当前数据保存在浏览器本地数据库中，刷新页面不会丢失，但清理浏览器站点数据后会被移除。';
+    }
+
+    final path = await databasePath();
+    return '当前账单保存在设备本地 SQLite 数据库中，覆盖安装新版本 APK 时不会清空。仅在卸载应用、手动清除应用数据或点击“恢复初始状态”时才会被移除。\n\n数据库位置：$path';
+  }
+
   Future<AppSnapshot?> loadSnapshot() async {
     final db = await database;
-    final metaRows = await db.query('app_meta', where: 'key = ?', whereArgs: ['totalBudget']);
+    final metaRows = await db
+        .query('app_meta', where: 'key = ?', whereArgs: ['totalBudget']);
     if (metaRows.isEmpty) {
       return null;
     }
 
-    final budget = double.tryParse(metaRows.first['value'] as String? ?? '') ?? 0;
+    final budget =
+        double.tryParse(metaRows.first['value'] as String? ?? '') ?? 0;
     final categoryRows = await db.query('categories');
     final recordRows = await db.query('records');
 

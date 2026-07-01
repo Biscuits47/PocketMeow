@@ -23,6 +23,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
   final _formKey = GlobalKey<FormState>();
   String? _selectedCategory;
   RecordType _recordType = RecordType.expense;
+  DateTime _selectedDateTime = DateTime.now();
   bool _initialized = false;
 
   @override
@@ -45,10 +46,10 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
           (initialCategories.isNotEmpty ? initialCategories.first.id : null);
       _amountController.text = initialExpense?.amount.toStringAsFixed(2) ?? '';
       _noteController.text = initialExpense?.note ?? '';
+      _selectedDateTime = initialExpense?.createdAt ?? DateTime.now();
       _initialized = true;
     }
     final isEditing = widget.expense != null;
-    final displayDate = widget.expense?.createdAt ?? DateTime.now();
     final categories = store.categoriesForType(_recordType);
     if (_selectedCategory != null &&
         categories.every((item) => item.id != _selectedCategory)) {
@@ -173,16 +174,57 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                     Row(
                       children: [
                         Expanded(
-                          child: Container(
-                            height: 56,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF1F4F6),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              '${formatMonthLabel(displayDate)} · ${formatDayLabel(displayDate)}',
-                              style: theme.textTheme.bodyMedium,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(20),
+                            onTap: _pickDateTime,
+                            child: Ink(
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F4F6),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.schedule_rounded,
+                                    size: 20,
+                                    color: AppTheme.muted,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '${formatMonthLabel(_selectedDateTime)} · ${formatDayLabel(_selectedDateTime)}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: theme.textTheme.bodyMedium,
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          '时间 ${_formatTime(_selectedDateTime)}',
+                                          style: theme.textTheme.bodySmall?.copyWith(
+                                            color: AppTheme.muted,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  IconButton(
+                                    onPressed: _pickDate,
+                                    visualDensity: VisualDensity.compact,
+                                    icon: const Icon(Icons.event_outlined, size: 20),
+                                  ),
+                                  IconButton(
+                                    onPressed: _pickTime,
+                                    visualDensity: VisualDensity.compact,
+                                    icon: const Icon(Icons.access_time_rounded, size: 20),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -206,18 +248,21 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                                     categoryId: _selectedCategory!,
                                     note: _noteController.text,
                                     type: _recordType,
+                                    createdAt: _selectedDateTime,
                                   );
                                 } else if (_recordType == RecordType.expense) {
                                   store.addExpense(
                                     amount: amount,
                                     categoryId: _selectedCategory!,
                                     note: _noteController.text,
+                                    createdAt: _selectedDateTime,
                                   );
                                 } else {
                                   store.addIncome(
                                     amount: amount,
                                     categoryId: _selectedCategory!,
                                     note: _noteController.text,
+                                    createdAt: _selectedDateTime,
                                   );
                                 }
                                 Navigator.of(context).pop();
@@ -236,5 +281,59 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
         ),
       ),
     );
+  }
+
+  Future<void> _pickDateTime() async {
+    await _pickDate();
+    if (!mounted) {
+      return;
+    }
+    await _pickTime();
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDateTime,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _selectedDateTime = DateTime(
+        picked.year,
+        picked.month,
+        picked.day,
+        _selectedDateTime.hour,
+        _selectedDateTime.minute,
+      );
+    });
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_selectedDateTime),
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _selectedDateTime = DateTime(
+        _selectedDateTime.year,
+        _selectedDateTime.month,
+        _selectedDateTime.day,
+        picked.hour,
+        picked.minute,
+      );
+    });
+  }
+
+  String _formatTime(DateTime value) {
+    final hh = value.hour.toString().padLeft(2, '0');
+    final mm = value.minute.toString().padLeft(2, '0');
+    return '$hh:$mm';
   }
 }

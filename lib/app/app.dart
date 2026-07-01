@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'state/pocket_meow_store.dart';
 import '../features/add_expense/add_expense_sheet.dart';
-import '../features/analytics/analytics_page.dart';
-import '../features/home/home_page.dart';
+import '../features/data/data_page.dart';
 import '../features/records/records_page.dart';
-import '../features/settings/settings_page.dart';
 import 'theme/app_theme.dart';
 
 class PocketMeowApp extends StatefulWidget {
@@ -55,10 +53,8 @@ class _AppShellState extends State<AppShell> {
   int _currentIndex = 0;
 
   final List<Widget> _pages = const [
-    HomePage(),
     RecordsPage(),
-    AnalyticsPage(),
-    SettingsPage(),
+    DataPage(),
   ];
 
   void _openAddExpense() {
@@ -98,24 +94,14 @@ class _AppShellState extends State<AppShell> {
         },
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home_rounded),
-            label: '首页',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.receipt_long_outlined),
             selectedIcon: Icon(Icons.receipt_long_rounded),
             label: '账单',
           ),
           NavigationDestination(
-            icon: Icon(Icons.analytics_outlined),
-            selectedIcon: Icon(Icons.analytics_rounded),
-            label: '分析',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings_rounded),
-            label: '我的',
+            icon: Icon(Icons.insights_outlined),
+            selectedIcon: Icon(Icons.insights_rounded),
+            label: '数据',
           ),
         ],
       ),

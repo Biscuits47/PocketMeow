@@ -51,16 +51,12 @@ class HomePage extends StatelessWidget {
             ),
             _OverviewCard(theme: theme, store: store),
             const SizedBox(height: 20),
-            Text('支出预算', style: theme.textTheme.titleLarge),
+            Text('预算进度', style: theme.textTheme.titleLarge),
             const SizedBox(height: 12),
-            ...store.expenseCategories.map(
-              (item) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _BudgetProgressCard(
-                  category: item,
-                  spent: store.spentForCategory(item.id),
-                ),
-              ),
+            _TotalBudgetProgressCard(
+              totalBudget: store.totalBudget,
+              spent: store.monthSpent,
+              remainingBudget: store.remainingBudget,
             ),
             const SizedBox(height: 12),
             Text('智能提示', style: theme.textTheme.titleLarge),
@@ -235,19 +231,24 @@ class _MetricBlock extends StatelessWidget {
   }
 }
 
-class _BudgetProgressCard extends StatelessWidget {
-  const _BudgetProgressCard({
-    required this.category,
+class _TotalBudgetProgressCard extends StatelessWidget {
+  const _TotalBudgetProgressCard({
+    required this.totalBudget,
     required this.spent,
+    required this.remainingBudget,
   });
 
-  final ExpenseCategory category;
+  final double totalBudget;
   final double spent;
+  final double remainingBudget;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final progress = category.limit <= 0 ? 0.0 : (spent / category.limit).clamp(0.0, 1.0);
+    final progress = totalBudget <= 0 ? 0.0 : (spent / totalBudget).clamp(0.0, 1.0);
+    final statusText = remainingBudget >= 0
+        ? '剩余 ${formatShortCurrency(remainingBudget)}'
+        : '已超支 ${formatShortCurrency(remainingBudget.abs())}';
 
     return Card(
       child: Padding(
@@ -260,25 +261,25 @@ class _BudgetProgressCard extends StatelessWidget {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: Color(category.colorValue).withValues(alpha: 0.14),
+                    color: AppTheme.mint.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   alignment: Alignment.center,
-                  child: Icon(
-                    iconForCategory(category.iconKey),
+                  child: const Icon(
+                    Icons.account_balance_wallet_outlined,
                     size: 18,
-                    color: Color(category.colorValue),
+                    color: AppTheme.mintDeep,
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    category.name,
+                    '本月总预算',
                     style: theme.textTheme.titleMedium,
                   ),
                 ),
                 Text(
-                  '${formatShortCurrency(spent)} / ${formatShortCurrency(category.limit)}',
+                  '${formatShortCurrency(spent)} / ${formatShortCurrency(totalBudget)}',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: AppTheme.muted,
                   ),
@@ -292,8 +293,25 @@ class _BudgetProgressCard extends StatelessWidget {
                 value: progress,
                 minHeight: 10,
                 backgroundColor: const Color(0xFFF0F3F4),
-                valueColor: AlwaysStoppedAnimation<Color>(Color(category.colorValue)),
+                valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.mintDeep),
               ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    statusText,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: AppTheme.muted,
+                    ),
+                  ),
+                ),
+                Text(
+                  '已用 ${(progress * 100).round()}%',
+                  style: theme.textTheme.titleSmall,
+                ),
+              ],
             ),
           ],
         ),

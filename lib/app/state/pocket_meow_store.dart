@@ -21,8 +21,10 @@ class PocketMeowStore extends ChangeNotifier {
   List<ExpenseRecord> get records => List.unmodifiable(_sortedRecords);
   List<ExpenseRecord> get expenses => List.unmodifiable(_sortedRecords);
 
-  List<ExpenseCategory> get expenseCategories => categoriesForType(RecordType.expense);
-  List<ExpenseCategory> get incomeCategories => categoriesForType(RecordType.income);
+  List<ExpenseCategory> get expenseCategories =>
+      categoriesForType(RecordType.expense);
+  List<ExpenseCategory> get incomeCategories =>
+      categoriesForType(RecordType.income);
   List<ExpenseCategory> get customCategories =>
       _categories.where((item) => !item.isSystem).toList();
 
@@ -93,12 +95,16 @@ class PocketMeowStore extends ChangeNotifier {
         .fold(0.0, (sum, item) => sum + item.amount);
   }
 
-  double get monthSpent => monthAmountOf(RecordType.expense, month: _selectedMonth);
-  double get monthIncome => monthAmountOf(RecordType.income, month: _selectedMonth);
+  double get monthSpent =>
+      monthAmountOf(RecordType.expense, month: _selectedMonth);
+  double get monthIncome =>
+      monthAmountOf(RecordType.income, month: _selectedMonth);
   double get monthNet => monthIncome - monthSpent;
 
-  double monthSpentFor(DateTime month) => monthAmountOf(RecordType.expense, month: month);
-  double monthIncomeFor(DateTime month) => monthAmountOf(RecordType.income, month: month);
+  double monthSpentFor(DateTime month) =>
+      monthAmountOf(RecordType.expense, month: month);
+  double monthIncomeFor(DateTime month) =>
+      monthAmountOf(RecordType.income, month: month);
 
   double get remainingBudget => _totalBudget - monthSpent;
 
@@ -178,6 +184,7 @@ class PocketMeowStore extends ChangeNotifier {
     required String categoryId,
     required String note,
     required RecordType type,
+    DateTime? createdAt,
   }) {
     _records = _records
         .map(
@@ -187,6 +194,7 @@ class PocketMeowStore extends ChangeNotifier {
                   categoryId: categoryId,
                   note: note.trim(),
                   type: type,
+                  createdAt: createdAt ?? item.createdAt,
                 )
               : item,
         )
@@ -226,16 +234,6 @@ class PocketMeowStore extends ChangeNotifier {
 
   void updateTotalBudget(double value) {
     _totalBudget = value;
-    notifyListeners();
-    _persist();
-  }
-
-  void updateCategoryBudget(String categoryId, double value) {
-    _categories = _categories
-        .map(
-          (item) => item.id == categoryId ? item.copyWith(limit: value) : item,
-        )
-        .toList();
     notifyListeners();
     _persist();
   }
@@ -299,6 +297,10 @@ class PocketMeowStore extends ChangeNotifier {
     _persist();
   }
 
+  Future<String> dataSafetySummary() {
+    return _storage.dataSafetySummary();
+  }
+
   ExpenseCategory? categoryById(String id) {
     for (final item in _categories) {
       if (item.id == id) {
@@ -326,7 +328,8 @@ class PocketMeowStore extends ChangeNotifier {
     return source
         .where(
           (item) =>
-              item.categoryId == categoryId && (type == null || item.type == type),
+              item.categoryId == categoryId &&
+              (type == null || item.type == type),
         )
         .fold(0.0, (sum, item) => sum + item.amount);
   }
@@ -413,22 +416,25 @@ class PocketMeowStore extends ChangeNotifier {
       return '还没有账单，先记下第一笔收入或支出，钱喵就能开始分析你的现金流。';
     }
 
-    final overspent = expenseCategories
-        .where((item) => item.limit > 0 && spentForCategory(item.id) > item.limit)
-        .toList();
-    if (overspent.isNotEmpty) {
-      final item = overspent.first;
-      final overBy = spentForCategory(item.id) - item.limit;
-      return '${item.name} 已超出预算 ${overBy.toStringAsFixed(0)} 元，建议优先控制这一类消费。';
+    if (_totalBudget > 0 && monthSpent > _totalBudget) {
+      final overBy = monthSpent - _totalBudget;
+      return '本月总支出已超出预算 ${overBy.toStringAsFixed(0)} 元，建议先控制大额消费。';
+    }
+
+    if (_totalBudget > 0 && budgetUsage >= 0.85) {
+      final remaining = remainingBudget > 0 ? remainingBudget : 0;
+      return '本月预算已使用 ${(budgetUsage * 100).round()}%，当前剩余 ${remaining.toStringAsFixed(0)} 元。';
     }
 
     if (monthNet < 0) {
       return '这个月支出高于收入 ${monthNet.abs().toStringAsFixed(0)} 元，建议关注大额支出分类。';
     }
 
-    final topExpense = categorySpendData.isEmpty ? null : categorySpendData.first;
+    final topExpense =
+        categorySpendData.isEmpty ? null : categorySpendData.first;
     if (topExpense != null) {
-      final ratio = monthSpent == 0 ? 0 : (topExpense.amount / monthSpent * 100).round();
+      final ratio =
+          monthSpent == 0 ? 0 : (topExpense.amount / monthSpent * 100).round();
       return '${topExpense.category.name} 是本月最大支出，占总支出的 $ratio%，是最值得关注的消费方向。';
     }
 
@@ -513,7 +519,7 @@ class PocketMeowStore extends ChangeNotifier {
         name: '餐饮',
         colorValue: 0xFF63D3B1,
         iconKey: 'restaurant',
-        limit: 2200,
+        limit: 0,
         type: RecordType.expense,
         isSystem: true,
       ),
@@ -522,7 +528,7 @@ class PocketMeowStore extends ChangeNotifier {
         name: '交通',
         colorValue: 0xFF8FA8FF,
         iconKey: 'train',
-        limit: 600,
+        limit: 0,
         type: RecordType.expense,
         isSystem: true,
       ),
@@ -531,7 +537,7 @@ class PocketMeowStore extends ChangeNotifier {
         name: '购物',
         colorValue: 0xFFFF8A5B,
         iconKey: 'shopping',
-        limit: 1200,
+        limit: 0,
         type: RecordType.expense,
         isSystem: true,
       ),
@@ -540,7 +546,7 @@ class PocketMeowStore extends ChangeNotifier {
         name: '娱乐',
         colorValue: 0xFFB39DDB,
         iconKey: 'movie',
-        limit: 800,
+        limit: 0,
         type: RecordType.expense,
         isSystem: true,
       ),
@@ -549,7 +555,7 @@ class PocketMeowStore extends ChangeNotifier {
         name: '日用',
         colorValue: 0xFF6FC3D6,
         iconKey: 'home',
-        limit: 700,
+        limit: 0,
         type: RecordType.expense,
         isSystem: true,
       ),
@@ -558,7 +564,7 @@ class PocketMeowStore extends ChangeNotifier {
         name: '医疗',
         colorValue: 0xFFE57373,
         iconKey: 'medical',
-        limit: 500,
+        limit: 0,
         type: RecordType.expense,
         isSystem: true,
       ),
@@ -633,7 +639,8 @@ class PocketMeowScope extends InheritedNotifier<PocketMeowStore> {
   }
 
   static PocketMeowStore read(BuildContext context) {
-    final element = context.getElementForInheritedWidgetOfExactType<PocketMeowScope>();
+    final element =
+        context.getElementForInheritedWidgetOfExactType<PocketMeowScope>();
     final scope = element?.widget as PocketMeowScope?;
     assert(scope != null, 'PocketMeowScope not found in widget tree.');
     return scope!.notifier!;

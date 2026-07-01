@@ -1,9 +1,34 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/state/pocket_meow_store.dart';
 import '../../app/theme/app_theme.dart';
+import '../../core/services/app_update_service.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/models/app_models.dart';
+
+final _appUpdateService = AppUpdateService();
+
+Future<void> openSettingsPage(BuildContext context) {
+  return Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => const _SettingsScaffold(),
+    ),
+  );
+}
+
+class _SettingsScaffold extends StatelessWidget {
+  const _SettingsScaffold();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('设置')),
+      body: const SettingsPage(),
+    );
+  }
+}
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -20,11 +45,12 @@ class SettingsPage extends StatelessWidget {
           Text('我的', style: theme.textTheme.headlineSmall),
           const SizedBox(height: 8),
           Text(
-            '预算、分类、提醒和偏好设置都放在这里。',
+            '预算、分类、数据安全和更新都放在这里。',
             style: theme.textTheme.bodyMedium?.copyWith(color: AppTheme.muted),
           ),
           const SizedBox(height: 20),
-          _ProfileCard(totalBudget: store.totalBudget, monthSpent: store.monthSpent),
+          _ProfileCard(
+              totalBudget: store.totalBudget, monthSpent: store.monthSpent),
           const SizedBox(height: 16),
           _SettingTile(
             icon: Icons.savings_outlined,
@@ -32,10 +58,15 @@ class SettingsPage extends StatelessWidget {
             subtitle: '当前总预算 ${formatShortCurrency(store.totalBudget)}',
             onTap: () => _showBudgetDialog(context, store),
           ),
-          _CategoryBudgetsCard(categories: store.categories),
-          const SizedBox(height: 16),
           _CategoryManagerCard(categories: store.categories),
           const SizedBox(height: 16),
+          _SettingTile(
+            icon: Icons.verified_user_outlined,
+            title: '数据安全',
+            subtitle: '账单保存在本地数据库，覆盖安装更新不会清空',
+            onTap: () => _showDataSafetyDialog(context, store),
+          ),
+          const _AppVersionTile(),
           const _SettingTile(
             icon: Icons.notifications_outlined,
             title: '提醒设置',
@@ -125,7 +156,8 @@ class _SettingTile extends StatelessWidget {
       child: Card(
         child: ListTile(
           onTap: onTap,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
           leading: Container(
             width: 44,
             height: 44,
@@ -150,74 +182,25 @@ class _SettingTile extends StatelessWidget {
   }
 }
 
-class _CategoryBudgetsCard extends StatelessWidget {
-  const _CategoryBudgetsCard({required this.categories});
-
-  final List<ExpenseCategory> categories;
+class _AppVersionTile extends StatelessWidget {
+  const _AppVersionTile();
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final store = PocketMeowScope.read(context);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('分类预算', style: theme.textTheme.titleLarge),
-            const SizedBox(height: 14),
-            ...categories
-                .where((item) => item.type == RecordType.expense)
-                .map(
-              (category) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(18),
-                  onTap: () => _showCategoryBudgetDialog(context, store, category),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: Color(category.colorValue).withValues(alpha: 0.14),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          alignment: Alignment.center,
-                          child: Icon(
-                            iconForCategory(category.iconKey),
-                            size: 18,
-                            color: Color(category.colorValue),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            category.name,
-                            style: theme.textTheme.titleMedium,
-                          ),
-                        ),
-                        Text(
-                          formatShortCurrency(category.limit),
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: AppTheme.muted,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        const Icon(Icons.chevron_right_rounded),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+    return FutureBuilder<PackageInfo>(
+      future: PackageInfo.fromPlatform(),
+      builder: (context, snapshot) {
+        final info = snapshot.data;
+        final versionText = info == null
+            ? '正在读取当前版本...'
+            : '当前版本 v${info.version} (${info.buildNumber})';
+        return _SettingTile(
+          icon: Icons.system_update_alt_rounded,
+          title: '检查更新',
+          subtitle: '$versionText\n从远端版本清单检查并下载最新 APK',
+          onTap: () => _checkForUpdates(context),
+        );
+      },
     );
   }
 }
@@ -259,7 +242,8 @@ class _CategoryManagerCard extends StatelessWidget {
                       width: 36,
                       height: 36,
                       decoration: BoxDecoration(
-                        color: Color(category.colorValue).withValues(alpha: 0.14),
+                        color:
+                            Color(category.colorValue).withValues(alpha: 0.14),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       alignment: Alignment.center,
@@ -335,46 +319,6 @@ Future<void> _showBudgetDialog(
   );
 }
 
-Future<void> _showCategoryBudgetDialog(
-  BuildContext context,
-  PocketMeowStore store,
-  ExpenseCategory category,
-) async {
-  final controller = TextEditingController(
-    text: category.limit.toStringAsFixed(0),
-  );
-
-  await showDialog<void>(
-    context: context,
-    builder: (context) {
-      return AlertDialog(
-        title: Text('修改 ${category.name} 预算'),
-        content: TextField(
-          controller: controller,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(hintText: '输入该分类预算'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final value = double.tryParse(controller.text.trim());
-              if (value != null && value > 0) {
-                store.updateCategoryBudget(category.id, value);
-              }
-              Navigator.of(context).pop();
-            },
-            child: const Text('保存'),
-          ),
-        ],
-      );
-    },
-  );
-}
-
 Future<void> _showAddCategoryDialog(
   BuildContext context,
   PocketMeowStore store,
@@ -383,7 +327,6 @@ Future<void> _showAddCategoryDialog(
   RecordType type = RecordType.expense;
   String iconKey = 'wallet';
   int colorValue = 0xFF63D3B1;
-  final budgetController = TextEditingController();
   const colorOptions = [
     0xFF63D3B1,
     0xFF8FA8FF,
@@ -410,7 +353,7 @@ Future<void> _showAddCategoryDialog(
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<RecordType>(
-                    value: type,
+                    initialValue: type,
                     items: RecordType.values
                         .map(
                           (item) => DropdownMenuItem(
@@ -469,7 +412,8 @@ Future<void> _showAddCategoryDialog(
                             children: [
                               Icon(
                                 option.icon,
-                                color: selected ? AppTheme.mintDeep : AppTheme.ink,
+                                color:
+                                    selected ? AppTheme.mintDeep : AppTheme.ink,
                               ),
                               const SizedBox(height: 6),
                               Text(
@@ -484,7 +428,7 @@ Future<void> _showAddCategoryDialog(
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<int>(
-                    value: colorValue,
+                    initialValue: colorValue,
                     items: colorOptions
                         .map(
                           (item) => DropdownMenuItem(
@@ -500,7 +444,8 @@ Future<void> _showAddCategoryDialog(
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                Text('#${item.toRadixString(16).substring(2).toUpperCase()}'),
+                                Text(
+                                    '#${item.toRadixString(16).substring(2).toUpperCase()}'),
                               ],
                             ),
                           ),
@@ -517,12 +462,11 @@ Future<void> _showAddCategoryDialog(
                     decoration: const InputDecoration(labelText: '颜色'),
                   ),
                   const SizedBox(height: 12),
-                  TextField(
-                    controller: budgetController,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: InputDecoration(
-                      hintText: type == RecordType.expense ? '支出分类预算，可选' : '收入分类无需预算',
-                    ),
+                  Text(
+                    '分类仅用于记账统计，不单独设置预算。',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppTheme.muted,
+                        ),
                   ),
                 ],
               ),
@@ -538,13 +482,12 @@ Future<void> _showAddCategoryDialog(
                   if (name.isEmpty) {
                     return;
                   }
-                  final limit = double.tryParse(budgetController.text.trim());
                   store.addCategory(
                     name: name,
                     type: type,
                     iconKey: iconKey,
                     colorValue: colorValue,
-                    limit: type == RecordType.expense ? limit : 0,
+                    limit: 0,
                   );
                   Navigator.of(context).pop();
                 },
@@ -556,6 +499,167 @@ Future<void> _showAddCategoryDialog(
       );
     },
   );
+}
+
+Future<void> _showDataSafetyDialog(
+  BuildContext context,
+  PocketMeowStore store,
+) async {
+  _showLoadingDialog(context, message: '正在读取数据存储信息...');
+  try {
+    final summary = await store.dataSafetySummary();
+    if (!context.mounted) {
+      return;
+    }
+    Navigator.of(context, rootNavigator: true).pop();
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('数据安全说明'),
+          content: Text(summary),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('我知道了'),
+            ),
+          ],
+        );
+      },
+    );
+  } catch (_) {
+    if (!context.mounted) {
+      return;
+    }
+    Navigator.of(context, rootNavigator: true).pop();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('读取数据存储信息失败，请稍后重试。')),
+    );
+  }
+}
+
+Future<void> _checkForUpdates(BuildContext context) async {
+  _showLoadingDialog(context, message: '正在检查远端版本清单...');
+  try {
+    final info = await _appUpdateService.checkForUpdate();
+    if (!context.mounted) {
+      return;
+    }
+    Navigator.of(context, rootNavigator: true).pop();
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        final releaseNotes =
+            info.releaseNotes.isEmpty ? '这次更新暂未填写说明。' : info.releaseNotes;
+        final downloadLabel = info.downloadUrl == null ? '查看详情' : '下载更新';
+        return AlertDialog(
+          title: Text(info.hasUpdate ? '发现新版本' : '已经是最新版本'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('当前版本：${info.currentVersion} (${info.currentBuild})'),
+                const SizedBox(height: 6),
+                Text('最新版本：${info.latestVersion} (${info.latestBuild})'),
+                if (info.publishedAt != null) ...[
+                  const SizedBox(height: 6),
+                  Text('发布时间：${_formatUpdateTime(info.publishedAt!)}'),
+                ],
+                const SizedBox(height: 14),
+                Text(
+                  info.hasUpdate
+                      ? '检测到新版本，可以直接从版本清单里的下载地址获取最新 APK。'
+                      : '当前安装版本已经不低于版本清单中的最新版本。',
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  '清单来源',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  info.manifestUrl,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppTheme.muted,
+                      ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  '更新说明',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(releaseNotes),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(info.hasUpdate ? '稍后' : '关闭'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                Navigator.of(context).pop();
+                await _openReleaseDownload(
+                  context,
+                  info.downloadUrl ?? info.detailsUrl,
+                );
+              },
+              child: Text(downloadLabel),
+            ),
+          ],
+        );
+      },
+    );
+  } catch (error) {
+    if (!context.mounted) {
+      return;
+    }
+    Navigator.of(context, rootNavigator: true).pop();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('检查更新失败：$error')),
+    );
+  }
+}
+
+void _showLoadingDialog(BuildContext context, {required String message}) {
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) {
+      return AlertDialog(
+        content: Row(
+          children: [
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2.6),
+            ),
+            const SizedBox(width: 16),
+            Expanded(child: Text(message)),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+Future<void> _openReleaseDownload(BuildContext context, String url) async {
+  final uri = Uri.parse(url);
+  final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  if (!launched && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('无法打开下载链接，请稍后重试。')),
+    );
+  }
+}
+
+String _formatUpdateTime(DateTime value) {
+  final hh = value.hour.toString().padLeft(2, '0');
+  final mm = value.minute.toString().padLeft(2, '0');
+  return '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')} $hh:$mm';
 }
 
 Future<void> _confirmDeleteCategory(

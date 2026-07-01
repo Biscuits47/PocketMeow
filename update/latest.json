@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0",
+  "build": 1,
+  "notes": "初始版本清单示例。发布新版本后，请把这里的 version、build、notes 和 apk_url 更新到最新值。",
+  "apk_url": "",
+  "page_url": "https://github.com/Biscuits47/PocketMeow",
+  "published_at": "2026-07-01T20:00:00+08:00"
+}

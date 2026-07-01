@@ -5,6 +5,7 @@ import '../../app/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/models/app_models.dart';
 import '../add_expense/add_expense_sheet.dart';
+import '../settings/settings_page.dart';
 
 class RecordsPage extends StatefulWidget {
   const RecordsPage({super.key});
@@ -56,6 +57,21 @@ class _RecordsPageState extends State<RecordsPage> {
                 ),
               ),
               _MonthSwitchCompact(store: store),
+              const SizedBox(width: 10),
+              InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => openSettingsPage(context),
+                child: Ink(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFE6EBEE)),
+                  ),
+                  child: const Icon(Icons.settings_outlined),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 20),
