@@ -1,0 +1,53 @@
+name: pocket_meow
+description: PocketMeow is a premium minimal expense tracker.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  path: ^1.9.1
+  sqflite: ^2.4.1
+  sqflite_common_ffi: ^2.3.4+4
+  sqflite_common_ffi_web: ^0.4.3
+  # sqlite3_flutter_libs: ^0.5.24
+  fl_chart: ^0.69.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.3
+  flutter_native_splash: ^2.4.4
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/branding/
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/branding/app_icon.png
+  adaptive_icon_background: "#162127"
+  adaptive_icon_foreground: assets/branding/app_icon.png
+  windows:
+    generate: true
+    image_path: assets/branding/app_icon.png
+  web:
+    generate: true
+    image_path: assets/branding/app_icon.png
+    background_color: "#F5F7F8"
+    theme_color: "#162127"
+
+flutter_native_splash:
+  color: "#F5F7F8"
+  image: assets/branding/splash_logo.png
+  android_12:
+    color: "#F5F7F8"
+    image: assets/branding/splash_logo.png
+  web: true
