@@ -16,6 +16,8 @@ if "%NEW_VERSION%"=="" (
   exit /b 1
 )
 
+set "NEW_VERSION=%NEW_VERSION: =%"
+
 echo %NEW_VERSION%| findstr /r "^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$" >nul
 if errorlevel 1 (
   echo Invalid version format. Use x.y.z, for example 1.2.0
@@ -28,8 +30,12 @@ set "TARGET_VERSION=%NEW_VERSION%"
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$path = 'pubspec.yaml';" ^
   "$content = Get-Content -Raw -Path $path;" ^
-  "$updated = [regex]::Replace($content, '(?m)^version:\s*.+$', 'version: %TARGET_VERSION%');" ^
-  "if ($updated -eq $content) { throw 'version field not found'; }" ^
+  "if (-not ($content -match '(?m)^version:\s*.+$')) { throw 'version field not found'; }" ^
+  "$cleanVersion = '%NEW_VERSION%'.Trim();" ^
+  "$parts = $cleanVersion.Split('.');" ^
+  "$versionCode = [int]$parts[0] * 1000000 + [int]$parts[1] * 1000 + [int]$parts[2];" ^
+  "$fullVersion = $cleanVersion + '+' + $versionCode;" ^
+  "$updated = [regex]::Replace($content, '(?m)^version:\s*.+$', ('version: ' + $fullVersion));" ^
   "[System.IO.File]::WriteAllText((Resolve-Path $path), $updated, (New-Object System.Text.UTF8Encoding($false)));"
 
 if errorlevel 1 (
