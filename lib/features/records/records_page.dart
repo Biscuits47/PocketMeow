@@ -16,6 +16,8 @@ class RecordsPage extends StatefulWidget {
 }
 
 class _RecordsPageState extends State<RecordsPage> {
+  bool _isIncomeVisible = false;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -85,9 +87,9 @@ class _RecordsPageState extends State<RecordsPage> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 120),
               children: [
-                InkWell(
-                  onTap: () => showBudgetDialog(context, store),
-                  borderRadius: BorderRadius.circular(32),
+                GestureDetector(
+                  onTap: () {},
+                  behavior: HitTestBehavior.opaque,
                   child: Container(
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(32),
@@ -207,17 +209,42 @@ class _RecordsPageState extends State<RecordsPage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      '本月收入',
-                                      style:
-                                          theme.textTheme.bodySmall?.copyWith(
-                                        color: Colors.white
-                                            .withValues(alpha: 0.58),
-                                      ),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          '本月收入',
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                            color: Colors.white
+                                                .withValues(alpha: 0.58),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        GestureDetector(
+                                          onTap: () {
+                                            setState(() {
+                                              _isIncomeVisible =
+                                                  !_isIncomeVisible;
+                                            });
+                                          },
+                                          child: Icon(
+                                            _isIncomeVisible
+                                                ? Icons.visibility_outlined
+                                                : Icons.visibility_off_outlined,
+                                            size: 14,
+                                            color: Colors.white
+                                                .withValues(alpha: 0.58),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                     const SizedBox(height: 6),
                                     Text(
-                                      formatShortCurrency(actualMonthIncome),
+                                      _isIncomeVisible
+                                          ? formatShortCurrency(
+                                              actualMonthIncome)
+                                          : '****',
                                       style:
                                           theme.textTheme.titleMedium?.copyWith(
                                         color: Colors.white,
@@ -227,26 +254,31 @@ class _RecordsPageState extends State<RecordsPage> {
                                 ),
                               ),
                               Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '预算结余',
-                                      style:
-                                          theme.textTheme.bodySmall?.copyWith(
-                                        color: Colors.white
-                                            .withValues(alpha: 0.58),
+                                child: GestureDetector(
+                                  onTap: () => showBudgetDialog(context, store),
+                                  behavior: HitTestBehavior.opaque,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '预算结余',
+                                        style:
+                                            theme.textTheme.bodySmall?.copyWith(
+                                          color: Colors.white
+                                              .withValues(alpha: 0.58),
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      formatShortCurrency(actualBalance),
-                                      style:
-                                          theme.textTheme.titleMedium?.copyWith(
-                                        color: Colors.white,
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        formatShortCurrency(actualBalance),
+                                        style: theme.textTheme.titleMedium
+                                            ?.copyWith(
+                                          color: Colors.white,
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ],

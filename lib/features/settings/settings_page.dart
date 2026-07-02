@@ -577,18 +577,23 @@ Future<void> _importBill(BuildContext context, PocketMeowStore store) async {
       if (!context.mounted) return;
       _showLoadingDialog(context, message: '正在导入账单...');
       final file = result.files.first;
-      int count = 0;
+      ImportResult? importResult;
       if (file.extension?.toLowerCase() == 'csv') {
-        count = await _billImportService.importAlipayBill(file, store);
+        importResult = await _billImportService.importAlipayBill(file, store);
       } else if (file.extension?.toLowerCase() == 'xlsx') {
-        count = await _billImportService.importWeChatBill(file, store);
+        importResult = await _billImportService.importWeChatBill(file, store);
       }
 
-      if (context.mounted) {
+      if (context.mounted && importResult != null) {
         Navigator.of(context, rootNavigator: true).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('成功导入 $count 笔账单')),
-        );
+
+        if (importResult.invalidRecords.isNotEmpty) {
+          await _showInvalidRecordsDialog(context, store, importResult);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('成功导入 ${importResult.importedCount} 笔账单')),
+          );
+        }
       }
     }
   } catch (e) {
@@ -599,6 +604,89 @@ Future<void> _importBill(BuildContext context, PocketMeowStore store) async {
       );
     }
   }
+}
+
+Future<void> _showInvalidRecordsDialog(
+  BuildContext context,
+  PocketMeowStore store,
+  ImportResult importResult,
+) async {
+  final invalidRecords = importResult.invalidRecords;
+  await showDialog<void>(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: Text('检测到 ${invalidRecords.length} 笔已失效交易'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                '在本次导入的账单中，以下交易被标记为"退款"、"交易关闭"或"不计收支"，但它们目前仍存在于您的软件记录中。是否一键删除它们？',
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: invalidRecords.length,
+                  itemBuilder: (context, index) {
+                    final record = invalidRecords[index];
+                    return ListTile(
+                      title: Text(record.note,
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(formatDayLabel(record.createdAt)),
+                      trailing: Text(
+                        formatCurrency(record.amount),
+                        style: TextStyle(
+                          color: record.type == RecordType.expense
+                              ? const Color(0xFFE57373)
+                              : const Color(0xFF81C784),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      contentPadding: EdgeInsets.zero,
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                    content: Text(
+                        '成功导入 ${importResult.importedCount} 笔账单 (保留了失效交易)')),
+              );
+            },
+            child: const Text('保留'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppTheme.warning,
+            ),
+            onPressed: () {
+              for (final record in invalidRecords) {
+                store.deleteRecord(record.id);
+              }
+              Navigator.of(context).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                      '成功导入 ${importResult.importedCount} 笔，并清理了 ${invalidRecords.length} 笔失效交易'),
+                ),
+              );
+            },
+            child: const Text('一键删除'),
+          ),
+        ],
+      );
+    },
+  );
 }
 
 Future<void> _exportData(BuildContext context, PocketMeowStore store) async {
@@ -832,11 +920,11 @@ class _DownloadApkDialogState extends State<_DownloadApkDialog> {
   void dispose() {
     _isCancelled = true;
     _client.close();
-    if (_tempFile != null && _tempFile!.existsSync()) {
-      try {
-        _tempFile!.deleteSync();
-      } catch (_) {}
-    }
+    try {
+      if (_tempFile?.existsSync() ?? false) {
+        _tempFile?.deleteSync();
+      }
+    } catch (_) {}
     super.dispose();
   }
 
@@ -855,27 +943,33 @@ class _DownloadApkDialogState extends State<_DownloadApkDialog> {
       final dir = await getTemporaryDirectory();
       _tempFile = File('${dir.path}/PocketMeow_update.apk');
       final sink = _tempFile!.openWrite();
+      bool success = false;
 
-      await for (final chunk in response.stream) {
-        if (_isCancelled) {
-          await sink.close();
-          if (_tempFile!.existsSync()) {
-            _tempFile!.deleteSync();
+      try {
+        await for (final chunk in response.stream) {
+          if (_isCancelled) {
+            await sink.close();
+            if (_tempFile!.existsSync()) {
+              _tempFile!.deleteSync();
+            }
+            return;
           }
-          return;
+          sink.add(chunk);
+          downloadedBytes += chunk.length;
+          if (contentLength > 0 && mounted) {
+            setState(() {
+              _progress = downloadedBytes / contentLength;
+              _statusText = '正在下载... ${(_progress * 100).toStringAsFixed(1)}%';
+            });
+          }
         }
-        sink.add(chunk);
-        downloadedBytes += chunk.length;
-        if (contentLength > 0 && mounted) {
-          setState(() {
-            _progress = downloadedBytes / contentLength;
-            _statusText = '正在下载... ${(_progress * 100).toStringAsFixed(1)}%';
-          });
-        }
+        await sink.flush();
+        success = true;
+      } finally {
+        await sink.close();
       }
 
-      await sink.close();
-      if (_isCancelled) return;
+      if (_isCancelled || !success) return;
 
       if (mounted) {
         setState(() {
@@ -885,7 +979,8 @@ class _DownloadApkDialogState extends State<_DownloadApkDialog> {
         });
       }
 
-      final result = await OpenFilex.open(_tempFile!.path);
+      _tempFile = null; // Prevent dispose from deleting it right after
+      final result = await OpenFilex.open('${dir.path}/PocketMeow_update.apk');
       if (mounted) {
         Navigator.of(context).pop(); // close dialog
         if (result.type != ResultType.done) {

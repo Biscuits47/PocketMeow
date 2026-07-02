@@ -8,6 +8,12 @@ import 'package:file_picker/file_picker.dart';
 import '../../app/state/pocket_meow_store.dart';
 import '../../data/models/app_models.dart';
 
+class ImportResult {
+  ImportResult({required this.importedCount, required this.invalidRecords});
+  final int importedCount;
+  final List<ExpenseRecord> invalidRecords;
+}
+
 class BillImportService {
   DateTime? _parseDateRobust(String timeStr) {
     try {
@@ -288,7 +294,8 @@ class BillImportService {
     return categoryId;
   }
 
-  Future<int> importAlipayBill(PlatformFile file, PocketMeowStore store) async {
+  Future<ImportResult> importAlipayBill(
+      PlatformFile file, PocketMeowStore store) async {
     List<int>? bytes;
     if (file.bytes != null) {
       bytes = file.bytes;
@@ -300,6 +307,7 @@ class BillImportService {
     final csvString = gbk.decode(bytes);
     final rows = Csv().decode(csvString);
     int importedCount = 0;
+    List<ExpenseRecord> invalidRecords = [];
 
     int timeIdx = -1,
         itemIdx = -1,
@@ -354,47 +362,85 @@ class BillImportService {
         var statusStr =
             statusIdx != -1 ? (row[statusIdx]?.toString().trim() ?? '') : '';
 
-        if (statusStr == '交易关闭' || statusStr == '退款给指定账户') continue;
-
-        if (itemStr == '支付宝小荷包-转出到银行卡' || itemStr == '支付宝小荷包-自动攒') {
-          continue;
-        }
-
-        RecordType type;
-        if (typeStr.contains('收入')) {
-          type = RecordType.income;
-        } else if (typeStr.contains('支出')) {
-          type = RecordType.expense;
-        } else if (statusStr.contains('退款') ||
-            itemStr.contains('退款') ||
-            categoryStr.contains('退款')) {
-          type = RecordType.income;
-        } else if (itemStr.contains('收益发放') || itemStr.contains('收款')) {
-          type = RecordType.income;
-        } else if (typeStr == '不计收支' || typeStr == '/') {
-          if (statusStr != '交易成功') continue;
-          if (itemStr.contains('充值') ||
-              itemStr.contains('转入') ||
-              itemStr.contains('转出') ||
-              itemStr.contains('提现') ||
-              itemStr.contains('信用卡还款')) {
-            continue;
-          }
-          type = RecordType.expense;
-        } else {
-          continue;
-        }
-
-        amountStr = amountStr.replaceAll('¥', '').replaceAll(',', '').trim();
-        double? amount = double.tryParse(amountStr);
-        if (amount == null || amount <= 0) continue;
-
         String note = itemStr;
         if (methodStr.isNotEmpty && methodStr != '/') {
           note += ' ($methodStr)';
         }
 
-        String categoryId = _inferCategoryId(note, categoryStr, type, store);
+        bool isInvalid = false;
+        RecordType type = RecordType.expense;
+
+        if (statusStr == '交易关闭' || statusStr == '退款给指定账户') {
+          isInvalid = true;
+        } else if (itemStr == '支付宝小荷包-转出到银行卡' || itemStr == '支付宝小荷包-自动攒') {
+          isInvalid = true;
+        } else {
+          if (typeStr.contains('收入')) {
+            type = RecordType.income;
+          } else if (typeStr.contains('支出')) {
+            type = RecordType.expense;
+          } else if (statusStr.contains('退款') ||
+              itemStr.contains('退款') ||
+              categoryStr.contains('退款')) {
+            type = RecordType.income;
+          } else if (itemStr.contains('收益发放') || itemStr.contains('收款')) {
+            type = RecordType.income;
+          } else if (typeStr == '不计收支' || typeStr == '/') {
+            if (statusStr != '交易成功') {
+              isInvalid = true;
+            } else if (itemStr.contains('充值') ||
+                itemStr.contains('转入') ||
+                itemStr.contains('转出') ||
+                itemStr.contains('提现') ||
+                itemStr.contains('信用卡还款') ||
+                itemStr.contains('收益发放') ||
+                itemStr.contains('红包')) {
+              isInvalid = true;
+            } else if (!counterpartyStr.contains('小荷包') &&
+                !counterpartyStr.contains('小金库') &&
+                !itemStr.contains('小荷包') &&
+                !itemStr.contains('小金库')) {
+              isInvalid = true;
+            } else {
+              type = RecordType.expense;
+            }
+          } else {
+            isInvalid = true;
+          }
+        }
+
+        amountStr = amountStr.replaceAll('¥', '').replaceAll(',', '').trim();
+        double? amount = double.tryParse(amountStr);
+        if (amount == null ||
+            amount <= 0 ||
+            amount.isNaN ||
+            amount.isInfinite) {
+          isInvalid = true;
+        }
+
+        if (isInvalid) {
+          final match = store.records
+              .where((item) =>
+                  item.note == note.trim() &&
+                  item.createdAt.difference(time).inSeconds.abs() < 1)
+              .firstOrNull;
+          if (match != null && !invalidRecords.any((r) => r.id == match.id)) {
+            invalidRecords.add(match);
+          }
+          continue;
+        }
+
+        if (amount == null) continue;
+
+        String categoryId = '';
+        final existingRecords =
+            store.records.where((r) => r.note == note).toList();
+        if (existingRecords.isNotEmpty) {
+          existingRecords.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          categoryId = existingRecords.first.categoryId;
+        } else {
+          categoryId = _inferCategoryId(note, categoryStr, type, store);
+        }
 
         int previousCount = store.records.length;
         store.addRecord(
@@ -409,10 +455,14 @@ class BillImportService {
         }
       }
     }
-    return importedCount;
+    return ImportResult(
+      importedCount: importedCount,
+      invalidRecords: invalidRecords,
+    );
   }
 
-  Future<int> importWeChatBill(PlatformFile file, PocketMeowStore store) async {
+  Future<ImportResult> importWeChatBill(
+      PlatformFile file, PocketMeowStore store) async {
     // Read bytes
     List<int>? bytes;
     if (file.bytes != null) {
@@ -424,6 +474,7 @@ class BillImportService {
 
     var excel = Excel.decodeBytes(bytes);
     int importedCount = 0;
+    List<ExpenseRecord> invalidRecords = [];
 
     for (var table in excel.tables.keys) {
       var sheet = excel.tables[table]!;
@@ -476,19 +527,23 @@ class BillImportService {
               ? (row[transactionTypeIdx]?.value?.toString() ?? '')
               : '';
 
-          if (typeStr == '/') continue; // e.g. transfers between own accounts
+          bool isInvalid = false;
+          if (typeStr == '/')
+            isInvalid = true; // e.g. transfers between own accounts
 
           if (transactionTypeStr.contains('转入零钱通') ||
               transactionTypeStr.contains('零钱通转出')) {
-            continue;
+            isInvalid = true;
           }
-
-          RecordType type =
-              typeStr.contains('收入') ? RecordType.income : RecordType.expense;
 
           amountStr = amountStr.replaceAll('¥', '').replaceAll(',', '').trim();
           double? amount = double.tryParse(amountStr);
-          if (amount == null || amount <= 0) continue;
+          if (amount == null ||
+              amount <= 0 ||
+              amount.isNaN ||
+              amount.isInfinite) {
+            isInvalid = true;
+          }
 
           String note = '';
           if (counterpartyStr.isNotEmpty &&
@@ -512,6 +567,23 @@ class BillImportService {
             note += ' ($methodStr)';
           }
 
+          if (isInvalid) {
+            final match = store.records
+                .where((item) =>
+                    item.note == note.trim() &&
+                    item.createdAt.difference(time).inSeconds.abs() < 1)
+                .firstOrNull;
+            if (match != null && !invalidRecords.any((r) => r.id == match.id)) {
+              invalidRecords.add(match);
+            }
+            continue;
+          }
+
+          if (amount == null) continue;
+
+          RecordType type =
+              typeStr.contains('收入') ? RecordType.income : RecordType.expense;
+
           // Use transactionTypeStr as the category hint if it matches our transfer types
           String categoryHint = '';
           if (transactionTypeStr.contains('退款')) {
@@ -522,8 +594,15 @@ class BillImportService {
             categoryHint = '转账';
           }
 
-          String categoryId = _inferCategoryId(note, categoryHint, type, store);
-
+          String categoryId = '';
+          final existingRecords =
+              store.records.where((r) => r.note == note).toList();
+          if (existingRecords.isNotEmpty) {
+            existingRecords.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+            categoryId = existingRecords.first.categoryId;
+          } else {
+            categoryId = _inferCategoryId(note, categoryHint, type, store);
+          }
           int previousCount = store.records.length;
           store.addRecord(
             amount: amount,
@@ -538,6 +617,9 @@ class BillImportService {
         }
       }
     }
-    return importedCount;
+    return ImportResult(
+      importedCount: importedCount,
+      invalidRecords: invalidRecords,
+    );
   }
 }

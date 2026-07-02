@@ -220,32 +220,38 @@ class _SpendingDistributionCard extends StatelessWidget {
     final typeName = type == RecordType.expense ? '支出' : '收入';
 
     List<CategorySpendData> pieItems = [];
-    double otherAmount = 0.0;
-    int otherCount = 0;
+    List<CategorySpendData> otherItems = [];
 
     for (final item in items) {
-      if (total > 0 && (item.amount / total) < 0.15) {
-        otherAmount += item.amount;
-        otherCount += item.count;
+      if (total > 0 && (item.amount / total) < 0.10) {
+        otherItems.add(item);
       } else {
         pieItems.add(item);
       }
     }
 
-    if (otherAmount > 0) {
-      pieItems.add(CategorySpendData(
-        category: ExpenseCategory(
-          id: 'other_combined',
-          name: '其他',
-          iconKey: 'more_horiz',
-          colorValue: 0xFFB0BEC5, // Grey color for 'Other'
-          limit: 0,
-          type: type,
-          isSystem: true,
-        ),
-        amount: otherAmount,
-        count: otherCount,
-      ));
+    if (otherItems.isNotEmpty) {
+      if (otherItems.length == 1) {
+        pieItems.add(otherItems.first);
+      } else {
+        double otherAmount =
+            otherItems.fold(0.0, (sum, item) => sum + item.amount);
+        int otherCount = otherItems.fold(0, (sum, item) => sum + item.count);
+
+        pieItems.add(CategorySpendData(
+          category: ExpenseCategory(
+            id: 'other_combined',
+            name: '其他',
+            iconKey: 'more_horiz',
+            colorValue: 0xFFB0BEC5, // Grey color for 'Other'
+            limit: 0,
+            type: type,
+            isSystem: true,
+          ),
+          amount: otherAmount,
+          count: otherCount,
+        ));
+      }
     }
 
     return Card(
@@ -934,12 +940,19 @@ void _showCategoryRecords(BuildContext context, ExpenseCategory category) {
   );
 }
 
-class _CategoryRecordsSheet extends StatelessWidget {
+class _CategoryRecordsSheet extends StatefulWidget {
   const _CategoryRecordsSheet({
     required this.category,
   });
 
   final ExpenseCategory category;
+
+  @override
+  State<_CategoryRecordsSheet> createState() => _CategoryRecordsSheetState();
+}
+
+class _CategoryRecordsSheetState extends State<_CategoryRecordsSheet> {
+  bool _sortByAmount = false;
 
   @override
   Widget build(BuildContext context) {
@@ -960,7 +973,7 @@ class _CategoryRecordsSheet extends StatelessWidget {
             builder: (context, _) {
               final store = PocketMeowScope.read(context);
               final records = store.currentMonthRecords
-                  .where((r) => r.categoryId == category.id)
+                  .where((r) => r.categoryId == widget.category.id)
                   .toList();
 
               if (records.isEmpty) {
@@ -969,19 +982,126 @@ class _CategoryRecordsSheet extends StatelessWidget {
                 );
               }
 
-              // 按天分组
-              final Map<DateTime, List<ExpenseRecord>> grouped = {};
-              for (final record in records) {
-                final date = DateTime(
-                  record.createdAt.year,
-                  record.createdAt.month,
-                  record.createdAt.day,
-                );
-                grouped.putIfAbsent(date, () => []).add(record);
-              }
+              Widget listContent;
 
-              final sortedKeys = grouped.keys.toList()
-                ..sort((a, b) => b.compareTo(a));
+              if (_sortByAmount) {
+                final sortedRecords = List<ExpenseRecord>.from(records)
+                  ..sort((a, b) => b.amount.compareTo(a.amount));
+
+                listContent = ListView.builder(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: sortedRecords.length,
+                  itemBuilder: (context, index) {
+                    final record = sortedRecords[index];
+                    final dateStr =
+                        '${record.createdAt.month}/${record.createdAt.day}';
+                    final timeStr =
+                        '${record.createdAt.hour.toString().padLeft(2, '0')}:${record.createdAt.minute.toString().padLeft(2, '0')}';
+                    final item = RecordItem(
+                      id: record.id,
+                      title: widget.category.name,
+                      category: widget.category.name,
+                      amount: record.amount,
+                      time: '$dateStr $timeStr',
+                      iconKey: widget.category.iconKey,
+                      record: record,
+                      type: record.type,
+                    );
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: RecordRow(
+                        item: item,
+                        onTap: () {
+                          showModalBottomSheet<void>(
+                            context: context,
+                            isScrollControlled: true,
+                            backgroundColor: Colors.transparent,
+                            builder: (_) =>
+                                AddExpenseSheet(expense: item.record),
+                          );
+                        },
+                      ),
+                    );
+                  },
+                );
+              } else {
+                // 按天分组
+                final Map<DateTime, List<ExpenseRecord>> grouped = {};
+                for (final record in records) {
+                  final date = DateTime(
+                    record.createdAt.year,
+                    record.createdAt.month,
+                    record.createdAt.day,
+                  );
+                  grouped.putIfAbsent(date, () => []).add(record);
+                }
+
+                final sortedKeys = grouped.keys.toList()
+                  ..sort((a, b) => b.compareTo(a));
+
+                listContent = ListView.builder(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: sortedKeys.length,
+                  itemBuilder: (context, index) {
+                    final date = sortedKeys[index];
+                    final items = grouped[date]!
+                      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(
+                              left: 8, bottom: 8, top: 16),
+                          child: Text(
+                            formatDayLabel(date),
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: AppTheme.muted,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        ...items.map((record) {
+                          final item = RecordItem(
+                            id: record.id,
+                            title: widget.category.name,
+                            category: widget.category.name,
+                            amount: record.amount,
+                            time:
+                                '${record.createdAt.hour.toString().padLeft(2, '0')}:${record.createdAt.minute.toString().padLeft(2, '0')}',
+                            iconKey: widget.category.iconKey,
+                            record: record,
+                            type: record.type,
+                          );
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: RecordRow(
+                              item: item,
+                              onTap: () {
+                                showModalBottomSheet<void>(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  backgroundColor: Colors.transparent,
+                                  builder: (_) =>
+                                      AddExpenseSheet(expense: item.record),
+                                );
+                              },
+                            ),
+                          );
+                        }).toList(),
+                      ],
+                    );
+                  },
+                );
+              }
 
               return Column(
                 children: [
@@ -1005,13 +1125,13 @@ class _CategoryRecordsSheet extends StatelessWidget {
                           width: 48,
                           height: 48,
                           decoration: BoxDecoration(
-                            color: Color(category.colorValue)
+                            color: Color(widget.category.colorValue)
                                 .withValues(alpha: 0.15),
                             shape: BoxShape.circle,
                           ),
                           child: Icon(
-                            iconForCategory(category.iconKey),
-                            color: Color(category.colorValue),
+                            iconForCategory(widget.category.iconKey),
+                            color: Color(widget.category.colorValue),
                             size: 24,
                           ),
                         ),
@@ -1020,7 +1140,7 @@ class _CategoryRecordsSheet extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(category.name,
+                              Text(widget.category.name,
                                   style: theme.textTheme.titleLarge),
                               const SizedBox(height: 4),
                               Text(
@@ -1032,6 +1152,19 @@ class _CategoryRecordsSheet extends StatelessWidget {
                             ],
                           ),
                         ),
+                        TextButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _sortByAmount = !_sortByAmount;
+                            });
+                          },
+                          icon: const Icon(Icons.sort, size: 18),
+                          label: Text(_sortByAmount ? '按金额' : '按时间'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppTheme.muted,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                          ),
+                        ),
                         IconButton(
                           icon: const Icon(Icons.close),
                           onPressed: () => Navigator.pop(context),
@@ -1041,75 +1174,7 @@ class _CategoryRecordsSheet extends StatelessWidget {
                     ),
                   ),
                   Expanded(
-                    child: ListView.builder(
-                      controller: scrollController,
-                      padding: const EdgeInsets.all(16),
-                      itemCount: sortedKeys.length,
-                      itemBuilder: (context, index) {
-                        final date = sortedKeys[index];
-                        final items = grouped[date]!
-                          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.only(
-                                  left: 8, bottom: 8, top: 16),
-                              child: Text(
-                                formatDayLabel(date),
-                                style: theme.textTheme.titleSmall?.copyWith(
-                                  color: AppTheme.muted,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            Card(
-                              margin: EdgeInsets.zero,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Column(
-                                children: items.map((record) {
-                                  final item = RecordItem(
-                                    id: record.id,
-                                    title: category.name,
-                                    category: category.name,
-                                    amount: record.amount,
-                                    time:
-                                        '${record.createdAt.hour.toString().padLeft(2, '0')}:${record.createdAt.minute.toString().padLeft(2, '0')}',
-                                    iconKey: category.iconKey,
-                                    record: record,
-                                    type: record.type,
-                                  );
-                                  return Column(
-                                    children: [
-                                      RecordRow(
-                                        item: item,
-                                        onTap: () {
-                                          showModalBottomSheet<void>(
-                                            context: context,
-                                            isScrollControlled: true,
-                                            backgroundColor: Colors.transparent,
-                                            builder: (_) => AddExpenseSheet(
-                                                expense: item.record),
-                                          );
-                                        },
-                                      ),
-                                      if (record != items.last)
-                                        const Divider(
-                                            height: 1,
-                                            indent: 64,
-                                            endIndent: 16),
-                                    ],
-                                  );
-                                }).toList(),
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
+                    child: listContent,
                   ),
                 ],
               );
