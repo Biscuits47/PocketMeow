@@ -367,9 +367,10 @@ String formatShortPeriodLabel(DateTime date, ReportType type) {
   if (type == ReportType.yearly) {
     return '${date.year} 年';
   } else if (type == ReportType.monthly) {
-    return '${date.month} 月';
+    return '${date.year} 年 ${date.month} 月';
   } else {
-    return '第 ${((date.day - 1) ~/ 7) + 1} 周';
+    final startOfWeek = date.subtract(Duration(days: date.weekday - 1));
+    return '${startOfWeek.year} 年 ${startOfWeek.month} 月 第 ${((date.day - 1) ~/ 7) + 1} 周';
   }
 }
 
@@ -409,6 +410,9 @@ String formatDayLabel(DateTime date) {
   }
   if (diff == 1) {
     return '昨天';
+  }
+  if (date.year != now.year) {
+    return '${date.year} 年 ${date.month} 月 ${date.day} 日';
   }
   return '${date.month} 月 ${date.day} 日';
 }

@@ -11,8 +11,15 @@ import '../add_expense/add_expense_sheet.dart';
 import '../records/records_page.dart';
 import '../settings/settings_page.dart';
 
-class DataPage extends StatelessWidget {
+class DataPage extends StatefulWidget {
   const DataPage({super.key});
+
+  @override
+  State<DataPage> createState() => _DataPageState();
+}
+
+class _DataPageState extends State<DataPage> {
+  RecordType _chartType = RecordType.expense;
 
   @override
   Widget build(BuildContext context) {
@@ -58,8 +65,15 @@ class DataPage extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('图表分析', style: theme.textTheme.titleLarge),
                     _PeriodSwitchCompact(store: store),
+                    _TypeSwitchCompact(
+                      type: _chartType,
+                      onChanged: (type) {
+                        setState(() {
+                          _chartType = type;
+                        });
+                      },
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -70,17 +84,95 @@ class DataPage extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
               children: [
-                _SpendingDistributionCard(store: store),
+                _SpendingDistributionCard(store: store, type: _chartType),
                 const SizedBox(height: 16),
-                _TrendCard(store: store),
-                const SizedBox(height: 16),
-                _MonthlyHistoryCard(store: store),
+                _TrendCard(store: store, type: _chartType),
                 const SizedBox(height: 16),
                 _InsightsSummaryCard(store: store),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TypeSwitchCompact extends StatelessWidget {
+  const _TypeSwitchCompact({
+    required this.type,
+    required this.onChanged,
+  });
+
+  final RecordType type;
+  final ValueChanged<RecordType> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F4F6),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _TypeButton(
+            label: '支出',
+            isSelected: type == RecordType.expense,
+            onTap: () => onChanged(RecordType.expense),
+          ),
+          _TypeButton(
+            label: '收入',
+            isSelected: type == RecordType.income,
+            onTap: () => onChanged(RecordType.income),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TypeButton extends StatelessWidget {
+  const _TypeButton({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  )
+                ]
+              : null,
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                color: isSelected ? AppTheme.ink : AppTheme.muted,
+              ),
+        ),
       ),
     );
   }
@@ -111,18 +203,21 @@ class _SettingsShortcut extends StatelessWidget {
 }
 
 class _SpendingDistributionCard extends StatelessWidget {
-  const _SpendingDistributionCard({required this.store});
+  const _SpendingDistributionCard({required this.store, required this.type});
 
   final PocketMeowStore store;
+  final RecordType type;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final items = store.categorySpendData.toList();
-    final total = store.monthSpent;
+    final items = store.categoryDataForType(type).toList();
+    final total =
+        type == RecordType.expense ? store.monthSpent : store.monthIncome;
     final periodName = store.reportType == ReportType.yearly
         ? '年'
         : (store.reportType == ReportType.weekly ? '周' : '月');
+    final typeName = type == RecordType.expense ? '支出' : '收入';
 
     List<CategorySpendData> pieItems = [];
     final maxPieItems = 5;
@@ -133,13 +228,13 @@ class _SpendingDistributionCard extends StatelessWidget {
           items.skip(maxPieItems).fold(0.0, (sum, item) => sum + item.amount);
       if (otherAmount > 0) {
         pieItems.add(CategorySpendData(
-          category: const ExpenseCategory(
+          category: ExpenseCategory(
             id: 'other',
             name: '其他',
             iconKey: 'other',
             colorValue: 0xFF8E8CD8,
             limit: 0,
-            type: RecordType.expense,
+            type: type,
             isSystem: true,
           ),
           amount: otherAmount,
@@ -157,7 +252,7 @@ class _SpendingDistributionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('当$periodName支出分布', style: theme.textTheme.titleLarge),
+            Text('当$periodName$typeName分布', style: theme.textTheme.titleLarge),
             const SizedBox(height: 18),
             if (items.isEmpty)
               Container(
@@ -315,23 +410,67 @@ class _SpendingDistributionCard extends StatelessWidget {
   }
 }
 
-class _TrendCard extends StatelessWidget {
-  const _TrendCard({required this.store});
+class _TrendCard extends StatefulWidget {
+  const _TrendCard({required this.store, required this.type});
 
   final PocketMeowStore store;
+  final RecordType type;
+
+  @override
+  State<_TrendCard> createState() => _TrendCardState();
+}
+
+class _TrendCardState extends State<_TrendCard> {
+  int? _touchedIndex;
+
+  @override
+  void didUpdateWidget(_TrendCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.store.reportType != widget.store.reportType ||
+        oldWidget.type != widget.type) {
+      _touchedIndex = null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final data = store.periodTrendData;
+    final data = widget.store.periodTrendData;
+    final isExpense = widget.type == RecordType.expense;
+
     final maxAmount = data.fold<double>(
       0,
-      (maxValue, item) => max(maxValue, max(item.expense, item.income)),
+      (maxValue, item) => max(maxValue, isExpense ? item.expense : item.income),
     );
 
-    final title = store.reportType == ReportType.yearly
-        ? '年度消费趋势'
-        : (store.reportType == ReportType.monthly ? '月度消费趋势' : '本周消费趋势');
+    final typeName = isExpense ? '消费' : '收入';
+    final title = widget.store.reportType == ReportType.yearly
+        ? '年度$typeName趋势'
+        : (widget.store.reportType == ReportType.monthly
+            ? '月度$typeName趋势'
+            : '本周$typeName趋势');
+
+    final lineColor = isExpense ? AppTheme.warning : AppTheme.mintDeep;
+    final fillColor = isExpense
+        ? AppTheme.warning.withValues(alpha: 0.12)
+        : AppTheme.mint.withValues(alpha: 0.12);
+
+    final barData = LineChartBarData(
+      isCurved: false,
+      preventCurveOverShooting: true,
+      color: lineColor,
+      barWidth: 3,
+      dotData: const FlDotData(show: false),
+      belowBarData: BarAreaData(
+        show: true,
+        color: fillColor,
+      ),
+      spots: List.generate(
+        data.length,
+        (index) => FlSpot(index.toDouble(),
+            isExpense ? data[index].expense : data[index].income),
+      ),
+    );
 
     return Card(
       child: Padding(
@@ -345,6 +484,15 @@ class _TrendCard extends StatelessWidget {
               height: 220,
               child: LineChart(
                 LineChartData(
+                  showingTooltipIndicators:
+                      _touchedIndex != null && _touchedIndex! < data.length
+                          ? [
+                              ShowingTooltipIndicators([
+                                LineBarSpot(
+                                    barData, 0, barData.spots[_touchedIndex!]),
+                              ])
+                            ]
+                          : [],
                   minY: 0,
                   maxY: maxAmount == 0 ? 100 : maxAmount * 1.2,
                   gridData: FlGridData(
@@ -373,7 +521,7 @@ class _TrendCard extends StatelessWidget {
                             return const SizedBox.shrink();
                           }
                           // Only show partial labels if too many (like monthly view)
-                          if (store.reportType == ReportType.monthly) {
+                          if (widget.store.reportType == ReportType.monthly) {
                             if (index % 5 != 0 && index != data.length - 1) {
                               return const SizedBox.shrink();
                             }
@@ -391,7 +539,42 @@ class _TrendCard extends StatelessWidget {
                   ),
                   borderData: FlBorderData(show: false),
                   lineTouchData: LineTouchData(
-                    handleBuiltInTouches: true,
+                    handleBuiltInTouches: false,
+                    touchCallback:
+                        (FlTouchEvent event, LineTouchResponse? touchResponse) {
+                      if (event is FlTapUpEvent || event is FlPanDownEvent) {
+                        if (touchResponse?.lineBarSpots != null &&
+                            touchResponse!.lineBarSpots!.isNotEmpty) {
+                          setState(() {
+                            _touchedIndex =
+                                touchResponse.lineBarSpots![0].spotIndex;
+                          });
+                        } else {
+                          setState(() {
+                            _touchedIndex = null;
+                          });
+                        }
+                      }
+                    },
+                    getTouchedSpotIndicator:
+                        (LineChartBarData barData, List<int> spotIndexes) {
+                      return spotIndexes.map((index) {
+                        return TouchedSpotIndicatorData(
+                          const FlLine(
+                              color: Color(0xFFE8EDF0), strokeWidth: 2),
+                          FlDotData(
+                            show: true,
+                            getDotPainter: (spot, percent, barData, index) =>
+                                FlDotCirclePainter(
+                              radius: 4,
+                              color: Colors.white,
+                              strokeWidth: 2,
+                              strokeColor: lineColor,
+                            ),
+                          ),
+                        );
+                      }).toList();
+                    },
                     touchTooltipData: LineTouchTooltipData(
                       fitInsideHorizontally: true,
                       fitInsideVertically: true,
@@ -399,7 +582,7 @@ class _TrendCard extends StatelessWidget {
                         return touchedSpots.map((spot) {
                           final label = data[spot.x.toInt()].label;
                           final amount = formatChartTooltipAmount(spot.y);
-                          final prefix = spot.barIndex == 0 ? '支出: ' : '收入: ';
+                          final prefix = isExpense ? '支出: ' : '收入: ';
                           if (spot == touchedSpots.first) {
                             return LineTooltipItem(
                               '$label\n$prefix$amount',
@@ -419,48 +602,14 @@ class _TrendCard extends StatelessWidget {
                       },
                     ),
                   ),
-                  lineBarsData: [
-                    LineChartBarData(
-                      isCurved: false,
-                      preventCurveOverShooting: true,
-                      color: AppTheme.warning,
-                      barWidth: 3,
-                      dotData: const FlDotData(show: false),
-                      belowBarData: BarAreaData(
-                        show: true,
-                        color: AppTheme.warning.withValues(alpha: 0.12),
-                      ),
-                      spots: List.generate(
-                        data.length,
-                        (index) =>
-                            FlSpot(index.toDouble(), data[index].expense),
-                      ),
-                    ),
-                    LineChartBarData(
-                      isCurved: false,
-                      preventCurveOverShooting: true,
-                      color: AppTheme.mintDeep,
-                      barWidth: 3,
-                      dotData: const FlDotData(show: false),
-                      belowBarData: BarAreaData(
-                        show: true,
-                        color: AppTheme.mint.withValues(alpha: 0.12),
-                      ),
-                      spots: List.generate(
-                        data.length,
-                        (index) => FlSpot(index.toDouble(), data[index].income),
-                      ),
-                    ),
-                  ],
+                  lineBarsData: [barData],
                 ),
               ),
             ),
             const SizedBox(height: 10),
-            const Row(
+            Row(
               children: [
-                _LegendDot(color: AppTheme.warning, label: '支出'),
-                SizedBox(width: 16),
-                _LegendDot(color: AppTheme.mintDeep, label: '收入'),
+                _LegendDot(color: lineColor, label: isExpense ? '支出' : '收入'),
               ],
             ),
           ],
@@ -498,7 +647,7 @@ class _InsightsSummaryCard extends StatelessWidget {
 
     final currentExp = store.monthSpent;
     final currentInc = store.monthIncome;
-    final currentBalance = store.totalBudget - currentExp;
+    final currentBalance = currentInc - currentExp;
 
     final prevExp = store.previousPeriodExpense;
     final prevInc = store.previousPeriodIncome;
@@ -553,22 +702,30 @@ class _InsightsSummaryCard extends StatelessWidget {
 }
 
 class _MonthlyHistoryCard extends StatelessWidget {
-  const _MonthlyHistoryCard({required this.store});
+  const _MonthlyHistoryCard({required this.store, required this.type});
 
   final PocketMeowStore store;
+  final RecordType type;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final data = store.historyBarData;
+    final isExpense = type == RecordType.expense;
+
     final maxAmount = data.fold<double>(
       0,
-      (maxValue, item) => max(maxValue, max(item.expense, item.income)),
+      (maxValue, item) => max(maxValue, isExpense ? item.expense : item.income),
     );
 
+    final typeName = isExpense ? '消费' : '收入';
     final title = store.reportType == ReportType.yearly
-        ? '每月消费'
-        : (store.reportType == ReportType.monthly ? '每周消费' : '每日消费');
+        ? '每月$typeName'
+        : (store.reportType == ReportType.monthly
+            ? '每周$typeName'
+            : '每日$typeName');
+
+    final barColor = isExpense ? AppTheme.warning : AppTheme.mintDeep;
 
     return Card(
       child: Padding(
@@ -602,7 +759,7 @@ class _MonthlyHistoryCard extends StatelessWidget {
                       getTooltipItem: (group, groupIndex, rod, rodIndex) {
                         final label = data[group.x.toInt()].label;
                         final amount = formatChartTooltipAmount(rod.toY);
-                        final prefix = rodIndex == 0 ? '支出: ' : '收入: ';
+                        final prefix = isExpense ? '支出: ' : '收入: ';
                         return BarTooltipItem(
                           '$label\n$prefix$amount',
                           const TextStyle(
@@ -650,16 +807,10 @@ class _MonthlyHistoryCard extends StatelessWidget {
                       barsSpace: 6,
                       barRods: [
                         BarChartRodData(
-                          toY: item.expense,
+                          toY: isExpense ? item.expense : item.income,
                           width: 10,
                           borderRadius: BorderRadius.circular(999),
-                          color: AppTheme.warning,
-                        ),
-                        BarChartRodData(
-                          toY: item.income,
-                          width: 10,
-                          borderRadius: BorderRadius.circular(999),
-                          color: AppTheme.mintDeep,
+                          color: barColor,
                         ),
                       ],
                     );
@@ -668,11 +819,9 @@ class _MonthlyHistoryCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            const Row(
+            Row(
               children: [
-                _LegendDot(color: AppTheme.warning, label: '支出'),
-                SizedBox(width: 16),
-                _LegendDot(color: AppTheme.mintDeep, label: '收入'),
+                _LegendDot(color: barColor, label: isExpense ? '支出' : '收入'),
               ],
             ),
           ],
@@ -846,7 +995,6 @@ class _CategoryRecordsSheet extends StatelessWidget {
                             child: RecordRow(
                               item: item,
                               onTap: () {
-                                Navigator.pop(context);
                                 showModalBottomSheet<void>(
                                   context: context,
                                   isScrollControlled: true,
@@ -978,10 +1126,26 @@ class _PieChartLabelPainter extends CustomPainter {
         }
         iterations++;
       }
+
+      // Clamp to prevent going out of bounds
+      final double maxY = (size.height - textPainter.height) > 0
+          ? size.height - textPainter.height
+          : 0.0;
+      final double maxX = (size.width - textPainter.width) > 0
+          ? size.width - textPainter.width
+          : 0.0;
+      labelY = labelY.clamp(0.0, maxY);
+      labelXCandidate = labelXCandidate.clamp(0.0, maxX);
+      y2 = labelY + textPainter.height / 2;
+
+      currentRect = Rect.fromLTWH(
+          labelXCandidate, labelY, textPainter.width, textPainter.height);
       labelRects.add(currentRect);
 
       // Horizontal line
-      final x3 = x2 + (isRightSide ? line2Length : -line2Length);
+      final x3 = isRightSide
+          ? labelXCandidate - 4
+          : labelXCandidate + textPainter.width + 4;
       final y3 = y2;
 
       final linePaint = Paint()
@@ -996,15 +1160,7 @@ class _PieChartLabelPainter extends CustomPainter {
 
       canvas.drawPath(path, linePaint);
 
-      double labelX;
-
-      if (isRightSide) {
-        labelX = x3 + 4;
-      } else {
-        labelX = x3 - textPainter.width - 4;
-      }
-
-      textPainter.paint(canvas, Offset(labelX, labelY));
+      textPainter.paint(canvas, Offset(labelXCandidate, labelY));
 
       currentAngle += angle;
     }

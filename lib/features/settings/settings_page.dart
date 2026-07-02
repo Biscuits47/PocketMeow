@@ -818,6 +818,9 @@ class _DownloadApkDialogState extends State<_DownloadApkDialog> {
   double _progress = 0.0;
   String _statusText = '准备下载...';
   bool _isDownloading = true;
+  final http.Client _client = http.Client();
+  bool _isCancelled = false;
+  File? _tempFile;
 
   @override
   void initState() {
@@ -825,10 +828,22 @@ class _DownloadApkDialogState extends State<_DownloadApkDialog> {
     _startDownload();
   }
 
+  @override
+  void dispose() {
+    _isCancelled = true;
+    _client.close();
+    if (_tempFile != null && _tempFile!.existsSync()) {
+      try {
+        _tempFile!.deleteSync();
+      } catch (_) {}
+    }
+    super.dispose();
+  }
+
   Future<void> _startDownload() async {
     try {
       final request = http.Request('GET', Uri.parse(widget.url));
-      final response = await http.Client().send(request);
+      final response = await _client.send(request);
 
       if (response.statusCode != 200 && response.statusCode != 302) {
         throw Exception('下载失败，状态码: ${response.statusCode}');
@@ -838,10 +853,17 @@ class _DownloadApkDialogState extends State<_DownloadApkDialog> {
       var downloadedBytes = 0;
 
       final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/PocketMeow_update.apk');
-      final sink = file.openWrite();
+      _tempFile = File('${dir.path}/PocketMeow_update.apk');
+      final sink = _tempFile!.openWrite();
 
       await for (final chunk in response.stream) {
+        if (_isCancelled) {
+          await sink.close();
+          if (_tempFile!.existsSync()) {
+            _tempFile!.deleteSync();
+          }
+          return;
+        }
         sink.add(chunk);
         downloadedBytes += chunk.length;
         if (contentLength > 0 && mounted) {
@@ -853,6 +875,7 @@ class _DownloadApkDialogState extends State<_DownloadApkDialog> {
       }
 
       await sink.close();
+      if (_isCancelled) return;
 
       if (mounted) {
         setState(() {
@@ -862,7 +885,7 @@ class _DownloadApkDialogState extends State<_DownloadApkDialog> {
         });
       }
 
-      final result = await OpenFilex.open(file.path);
+      final result = await OpenFilex.open(_tempFile!.path);
       if (mounted) {
         Navigator.of(context).pop(); // close dialog
         if (result.type != ResultType.done) {
@@ -872,6 +895,7 @@ class _DownloadApkDialogState extends State<_DownloadApkDialog> {
         }
       }
     } catch (e) {
+      if (_isCancelled) return;
       if (mounted) {
         setState(() {
           _statusText = '下载出错: $e';
@@ -897,7 +921,12 @@ class _DownloadApkDialogState extends State<_DownloadApkDialog> {
         ],
       ),
       actions: [
-        if (!_isDownloading)
+        if (_isDownloading)
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          )
+        else
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('关闭'),

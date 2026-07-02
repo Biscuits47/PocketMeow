@@ -49,6 +49,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
       _amountController.text = initialExpense?.amount.toStringAsFixed(2) ?? '';
       _noteController.text = initialExpense?.note ?? '';
       _selectedDateTime = initialExpense?.createdAt ?? DateTime.now();
+      _excludeFromBudget = initialExpense?.excludeFromBudget ?? false;
       _initialized = true;
     }
     final isEditing = widget.expense != null;
@@ -259,7 +260,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                                     ),
                                   ),
                                   IconButton(
-                                    onPressed: _pickDate,
+                                    onPressed: _pickDateTime,
                                     visualDensity: VisualDensity.compact,
                                     icon: const Icon(Icons.event_outlined,
                                         size: 20),
@@ -306,7 +307,6 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                                     categoryId: _selectedCategory!,
                                     note: _noteController.text,
                                     createdAt: _selectedDateTime,
-                                    excludeFromBudget: _excludeFromBudget,
                                   );
                                 }
                                 Navigator.of(context).pop();
@@ -328,49 +328,47 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
   }
 
   Future<void> _pickDateTime() async {
-    await _pickDate();
-    if (!mounted) {
-      return;
-    }
-    await _pickTime();
-  }
-
-  Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
       initialDate: _selectedDateTime,
       firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
+      lastDate: DateTime.now(),
+      initialEntryMode: DatePickerEntryMode.calendarOnly,
+      helpText: '选择日期',
+      cancelText: '取消',
+      confirmText: '确定',
+      locale: const Locale('zh', 'CN'),
     );
     if (picked == null || !mounted) {
       return;
     }
+
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_selectedDateTime),
+      initialEntryMode: TimePickerEntryMode.inputOnly,
+      helpText: '选择时间',
+      cancelText: '取消',
+      confirmText: '确定',
+      builder: (context, child) {
+        return Localizations.override(
+          context: context,
+          locale: const Locale('zh', 'CN'),
+          child: child,
+        );
+      },
+    );
+    if (pickedTime == null || !mounted) {
+      return;
+    }
+
     setState(() {
       _selectedDateTime = DateTime(
         picked.year,
         picked.month,
         picked.day,
-        _selectedDateTime.hour,
-        _selectedDateTime.minute,
-      );
-    });
-  }
-
-  Future<void> _pickTime() async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(_selectedDateTime),
-    );
-    if (picked == null || !mounted) {
-      return;
-    }
-    setState(() {
-      _selectedDateTime = DateTime(
-        _selectedDateTime.year,
-        _selectedDateTime.month,
-        _selectedDateTime.day,
-        picked.hour,
-        picked.minute,
+        pickedTime.hour,
+        pickedTime.minute,
       );
     });
   }

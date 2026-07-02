@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'state/pocket_meow_store.dart';
 import '../features/add_expense/add_expense_sheet.dart';
@@ -36,6 +37,14 @@ class _PocketMeowAppState extends State<PocketMeowApp> {
         title: '钱喵',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: const [
+          Locale('zh', 'CN'),
+        ],
         home: const AppShell(),
       ),
     );

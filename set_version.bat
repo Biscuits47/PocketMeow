@@ -30,10 +30,21 @@ set "TARGET_VERSION=%NEW_VERSION%"
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$path = 'pubspec.yaml';" ^
   "$content = Get-Content -Raw -Path $path;" ^
-  "if (-not ($content -match '(?m)^version:\s*.+$')) { throw 'version field not found'; }" ^
+  "if (-not ($content -match '(?m)^version:\s*(.+?)(?:\+(\d+))?$')) { throw 'version field not found'; }" ^
+  "$currentVersionName = $matches[1];" ^
+  "$currentVersionCode = if ($matches[2]) { [int]$matches[2] } else { 0 };" ^
   "$cleanVersion = '%NEW_VERSION%'.Trim();" ^
   "$parts = $cleanVersion.Split('.');" ^
-  "$versionCode = [int]$parts[0] * 1000000 + [int]$parts[1] * 1000 + [int]$parts[2];" ^
+  "$baseVersionCode = [int]$parts[0] * 1000000 + [int]$parts[1] * 1000 + [int]$parts[2];" ^
+  "if ($cleanVersion -eq $currentVersionName) {" ^
+  "  if ($currentVersionCode -ge $baseVersionCode) {" ^
+  "    $versionCode = $currentVersionCode + 1;" ^
+  "  } else {" ^
+  "    $versionCode = $baseVersionCode;" ^
+  "  }" ^
+  "} else {" ^
+  "  $versionCode = $baseVersionCode;" ^
+  "}" ^
   "$fullVersion = $cleanVersion + '+' + $versionCode.ToString();" ^
   "$updated = [regex]::Replace($content, '(?m)^version:\s*.+$', ('version: ' + $fullVersion));" ^
   "[System.IO.File]::WriteAllText((Resolve-Path $path), $updated, (New-Object System.Text.UTF8Encoding($false)));"

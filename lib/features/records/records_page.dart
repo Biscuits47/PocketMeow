@@ -6,10 +6,16 @@ import '../../core/utils/formatters.dart';
 import '../../data/models/app_models.dart';
 import '../add_expense/add_expense_sheet.dart';
 import '../settings/settings_page.dart';
+import 'search_records_sheet.dart';
 
-class RecordsPage extends StatelessWidget {
+class RecordsPage extends StatefulWidget {
   const RecordsPage({super.key});
 
+  @override
+  State<RecordsPage> createState() => _RecordsPageState();
+}
+
+class _RecordsPageState extends State<RecordsPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -67,7 +73,13 @@ class RecordsPage extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
-            child: Text('账单', style: theme.textTheme.headlineMedium),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('账单', style: theme.textTheme.headlineMedium),
+                _SearchShortcut(onTap: () => _showSearchSheet(context)),
+              ],
+            ),
           ),
           Expanded(
             child: ListView(
@@ -219,7 +231,7 @@ class RecordsPage extends StatelessWidget {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      '总结余',
+                                      '预算结余',
                                       style:
                                           theme.textTheme.bodySmall?.copyWith(
                                         color: Colors.white
@@ -258,10 +270,12 @@ class RecordsPage extends StatelessWidget {
                     ),
                   ),
                 ...grouped.map(
-                  (section) => Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: _DaySection(section: section),
-                  ),
+                  (section) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: _DaySection(section: section),
+                    );
+                  },
                 ),
               ],
             ),
@@ -422,7 +436,8 @@ class RecordRow extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    if (item.record.excludeFromBudget) ...[
+                    if (item.record.excludeFromBudget &&
+                        item.type == RecordType.expense) ...[
                       const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -494,6 +509,7 @@ List<GroupedRecords> groupByDay(
   }
 
   final result = map.entries.map((entry) {
+    // 降序排序：晚的在上面（b.createdAt.compareTo(a.createdAt)），早的在下面
     final items = [...entry.value]
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     final date = items.first.createdAt;
@@ -511,10 +527,10 @@ List<GroupedRecords> groupByDay(
         type: record.type,
       );
     }).toList();
-    final income = items
+    final income = mapped
         .where((item) => item.type == RecordType.income)
         .fold(0.0, (sum, item) => sum + item.amount);
-    final expense = items
+    final expense = mapped
         .where((item) => item.type == RecordType.expense)
         .fold(0.0, (sum, item) => sum + item.amount);
     return GroupedRecords(
@@ -527,4 +543,45 @@ List<GroupedRecords> groupByDay(
 
   result.sort((a, b) => b.date.compareTo(a.date));
   return result;
+}
+
+class _SearchShortcut extends StatelessWidget {
+  const _SearchShortcut({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: onTap,
+      child: Ink(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE6EBEE)),
+        ),
+        child: const Icon(Icons.search_rounded),
+      ),
+    );
+  }
+}
+
+void _showSearchSheet(BuildContext context) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => DraggableScrollableSheet(
+      initialChildSize: 0.9,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (_, scrollController) {
+        return SearchRecordsSheet(scrollController: scrollController);
+      },
+    ),
+  );
 }
