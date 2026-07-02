@@ -58,9 +58,9 @@ if errorlevel 1 (
 )
 
 echo.
-echo [PocketMeow] Building release APK...
+echo [PocketMeow] Building release APK (Split per ABI)...
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$flutter='%FLUTTER_CMD%'; $cmdStr = '{0} build apk --release > build_out.log 2> build_err.log' -f $flutter; $proc = Start-Process cmd.exe -ArgumentList '/c', $cmdStr -WindowStyle Hidden -PassThru; $i=0; while(-not $proc.HasExited){ $i=[math]::min($i+1, 99); Write-Progress -Activity 'Building PocketMeow APK' -Status ('{0}%% Complete' -f $i) -PercentComplete $i; Start-Sleep -Milliseconds 600 }; Write-Progress -Activity 'Building PocketMeow APK' -Completed; exit $proc.ExitCode"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$flutter='%FLUTTER_CMD%'; $cmdStr = '{0} build apk --release --split-per-abi > build_out.log 2> build_err.log' -f $flutter; $proc = Start-Process cmd.exe -ArgumentList '/c', $cmdStr -WindowStyle Hidden -PassThru; $i=0; while(-not $proc.HasExited){ $i=[math]::min($i+1, 99); Write-Progress -Activity 'Building PocketMeow APK' -Status ('{0}%% Complete' -f $i) -PercentComplete $i; Start-Sleep -Milliseconds 600 }; Write-Progress -Activity 'Building PocketMeow APK' -Completed; exit $proc.ExitCode"
 set BUILD_EXIT_CODE=%ERRORLEVEL%
 
 if %BUILD_EXIT_CODE% neq 0 (
@@ -78,14 +78,17 @@ if not exist "%TARGET_DIR%" (
 
 for /f "tokens=2" %%v in ('findstr "^version: " "%PROJECT_DIR%pubspec.yaml"') do set "FULL_VERSION=%%v"
 for /f "tokens=1 delims=+" %%a in ("%FULL_VERSION%") do set "APP_VERSION=%%a"
-set "APK_FILENAME=PocketMeow_v%APP_VERSION%.apk"
+set "APK_FILENAME=PocketMeow_v%APP_VERSION%_arm64.apk"
+set "APK_FILENAME_V7=PocketMeow_v%APP_VERSION%_arm32.apk"
 
 echo [PocketMeow] Copying APK to %TARGET_DIR%...
-copy /Y "%PROJECT_DIR%build\app\outputs\flutter-apk\app-release.apk" "%TARGET_DIR%\%APK_FILENAME%" >nul
+copy /Y "%PROJECT_DIR%build\app\outputs\flutter-apk\app-arm64-v8a-release.apk" "%TARGET_DIR%\%APK_FILENAME%" >nul
+copy /Y "%PROJECT_DIR%build\app\outputs\flutter-apk\app-armeabi-v7a-release.apk" "%TARGET_DIR%\%APK_FILENAME_V7%" >nul
 
 echo.
 echo APK build and copy completed:
-echo %TARGET_DIR%\%APK_FILENAME%
+echo %TARGET_DIR%\%APK_FILENAME% (64-bit, ~20MB, for most modern phones)
+echo %TARGET_DIR%\%APK_FILENAME_V7% (32-bit, for older phones)
 call :maybe_pause
 exit /b 0
 

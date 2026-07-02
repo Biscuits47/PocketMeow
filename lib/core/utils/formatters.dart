@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../app/state/pocket_meow_store.dart';
 import '../../data/models/app_models.dart';
@@ -335,17 +336,39 @@ String formatChartAmount(double value) {
   return '$sign¥$formattedInt';
 }
 
-String formatChartTooltipAmount(double value) {
-  final absValue = value.abs();
-  if (absValue == absValue.roundToDouble()) {
-    return '¥${value.toInt()}';
+String formatChartTooltipAmount(double amount, {bool noDecimal = false}) {
+  if (amount >= 10000) {
+    final value = amount / 10000;
+    if (noDecimal) {
+      return '${value.toInt()}万';
+    }
+    // Show up to 2 decimal places for '万' and remove trailing zeros
+    final str = value.toStringAsFixed(2);
+    if (str.endsWith('.00')) {
+      return '${str.substring(0, str.length - 3)}万';
+    } else if (str.endsWith('0')) {
+      return '${str.substring(0, str.length - 1)}万';
+    }
+    return '$str万';
+  } else if (amount >= 1000) {
+    if (noDecimal) {
+      return NumberFormat('#,##0').format(amount);
+    }
+    // Add comma for thousands
+    return NumberFormat('#,##0.##').format(amount);
+  } else {
+    if (noDecimal) {
+      return amount.toInt().toString();
+    }
+    // Dynamic decimal points up to 2
+    final str = amount.toStringAsFixed(2);
+    if (str.endsWith('.00')) {
+      return str.substring(0, str.length - 3);
+    } else if (str.endsWith('0')) {
+      return str.substring(0, str.length - 1);
+    }
+    return str;
   }
-  // Use toStringAsFixed to prevent floating point precision issues (like 85.25600000000001)
-  // We keep up to 3 decimal places as requested
-  String str = absValue.toStringAsFixed(3);
-  // Remove trailing zeros and possible trailing dot
-  str = str.replaceAll(RegExp(r'0*$'), '').replaceAll(RegExp(r'\.$'), '');
-  return '¥$str';
 }
 
 String formatPeriodLabel(DateTime date, ReportType type) {

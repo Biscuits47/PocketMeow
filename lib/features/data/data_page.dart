@@ -220,30 +220,32 @@ class _SpendingDistributionCard extends StatelessWidget {
     final typeName = type == RecordType.expense ? '支出' : '收入';
 
     List<CategorySpendData> pieItems = [];
-    final maxPieItems = 5;
+    double otherAmount = 0.0;
+    int otherCount = 0;
 
-    if (items.length > maxPieItems) {
-      pieItems = items.take(maxPieItems).toList();
-      final otherAmount =
-          items.skip(maxPieItems).fold(0.0, (sum, item) => sum + item.amount);
-      if (otherAmount > 0) {
-        pieItems.add(CategorySpendData(
-          category: ExpenseCategory(
-            id: 'other',
-            name: '其他',
-            iconKey: 'other',
-            colorValue: 0xFF8E8CD8,
-            limit: 0,
-            type: type,
-            isSystem: true,
-          ),
-          amount: otherAmount,
-          count:
-              items.skip(maxPieItems).fold(0, (sum, item) => sum + item.count),
-        ));
+    for (final item in items) {
+      if (total > 0 && (item.amount / total) < 0.15) {
+        otherAmount += item.amount;
+        otherCount += item.count;
+      } else {
+        pieItems.add(item);
       }
-    } else {
-      pieItems.addAll(items);
+    }
+
+    if (otherAmount > 0) {
+      pieItems.add(CategorySpendData(
+        category: ExpenseCategory(
+          id: 'other_combined',
+          name: '其他',
+          iconKey: 'more_horiz',
+          colorValue: 0xFFB0BEC5, // Grey color for 'Other'
+          limit: 0,
+          type: type,
+          isSystem: true,
+        ),
+        amount: otherAmount,
+        count: otherCount,
+      ));
     }
 
     return Card(
@@ -509,8 +511,30 @@ class _TrendCardState extends State<_TrendCard> {
                         sideTitles: SideTitles(showTitles: false)),
                     rightTitles: const AxisTitles(
                         sideTitles: SideTitles(showTitles: false)),
-                    leftTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false)),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 40,
+                        interval: maxAmount == 0 ? 25 : maxAmount / 4,
+                        getTitlesWidget: (value, meta) {
+                          // Avoid showing the max/min edge if it overlaps, but generally FlChart handles it.
+                          if (value == meta.max || value == meta.min) {
+                            return const SizedBox.shrink();
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: Text(
+                              formatChartTooltipAmount(value, noDecimal: true),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                fontSize: 10,
+                                color: AppTheme.muted,
+                              ),
+                              textAlign: TextAlign.right,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
                     bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
@@ -656,12 +680,144 @@ class _InsightsSummaryCard extends StatelessWidget {
         ? '结余 ${formatShortCurrency(currentBalance)}'
         : '超支 ${formatShortCurrency(currentBalance.abs())}';
 
-    final insights = [
-      if (topCategory != null)
-        '${topCategory.category.name} 是本$periodName最大支出，占比 ${(topCategory.shareOf(store.monthSpent) * 100).round()}%',
-      '与上$periodName相比，${_formatComparison(currentExp, prevExp, '支出')}，${_formatComparison(currentInc, prevInc, '收入')}。',
-      '本$periodName$balanceText，支出占收入的 ${currentInc > 0 ? ((currentExp / currentInc) * 100).round() : 0}%。'
-    ];
+    final salaryAndBonus = store.currentMonthIncomes.where((r) {
+      final cat = store.categoryById(r.categoryId);
+      return cat?.name == '工资' ||
+          cat?.name == '奖金' ||
+          r.categoryId == 'salary' ||
+          r.categoryId == 'bonus';
+    }).fold(0.0, (sum, r) => sum + r.amount);
+
+    String thirdInsight;
+    if (currentInc == 0) {
+      thirdInsight = '本$periodName共支出 ${formatShortCurrency(currentExp)}。';
+    } else {
+      thirdInsight =
+          '本$periodName$balanceText，支出占收入的 ${((currentExp / currentInc) * 100).round()}%。';
+    }
+
+    final insights = <InlineSpan>[];
+    final defaultStyle = theme.textTheme.bodyMedium!;
+    final boldStyle = defaultStyle.copyWith(fontWeight: FontWeight.bold);
+
+    if (store.reportType == ReportType.yearly) {
+      insights.add(TextSpan(children: [
+        TextSpan(text: '本年度总收入为 ${formatShortCurrency(currentInc)}，其中'),
+        TextSpan(text: '工资', style: boldStyle),
+        const TextSpan(text: '和'),
+        TextSpan(text: '奖金', style: boldStyle),
+        TextSpan(
+            text:
+                '收入为 ${formatShortCurrency(salaryAndBonus)}，总支出为 ${formatShortCurrency(currentExp)}。'),
+      ]));
+    }
+    if (topCategory != null) {
+      insights.add(TextSpan(children: [
+        TextSpan(text: topCategory.category.name.trim(), style: boldStyle),
+        TextSpan(
+            text:
+                '是本$periodName最大支出，占总支出的 ${(topCategory.shareOf(store.monthSpent) * 100).round()}%'),
+      ]));
+    }
+    insights.add(TextSpan(
+        text:
+            '与上$periodName相比，${_formatComparison(currentExp, prevExp, '支出')}，${_formatComparison(currentInc, prevInc, '收入')}。'));
+    insights.add(TextSpan(text: thirdInsight));
+
+    if (store.reportType == ReportType.yearly &&
+        store.selectedDate.year == DateTime.now().year) {
+      final now = DateTime.now();
+      double forecastIncome = 0;
+      bool hasData = false;
+
+      final currentYearRecords = store.records.where((r) =>
+          r.type == RecordType.income &&
+          !r.excludeFromBudget &&
+          r.createdAt.year == now.year);
+
+      // Find salary and bonus records for the year
+      final salaryBonusRecords = currentYearRecords.where((r) {
+        final cat = store.categoryById(r.categoryId);
+        return cat?.name == '工资' ||
+            cat?.name == '奖金' ||
+            r.categoryId == 'salary' ||
+            r.categoryId == 'bonus';
+      }).toList();
+
+      if (now.month > 1) {
+        // Calculate total income so far
+        final totalIncomeSoFar =
+            currentYearRecords.fold(0.0, (sum, r) => sum + r.amount);
+
+        // Count how many months have salary/bonus
+        final monthsWithSalary = <int>{};
+        double totalSalaryBonus = 0;
+
+        for (final r in salaryBonusRecords) {
+          monthsWithSalary.add(r.createdAt.month);
+          totalSalaryBonus += r.amount;
+        }
+
+        final avgMonthlySalary = monthsWithSalary.isNotEmpty
+            ? totalSalaryBonus / monthsWithSalary.length
+            : 0.0;
+
+        // For remaining months (including current month if it doesn't have salary yet)
+        int remainingMonths = 12 - now.month;
+        if (!monthsWithSalary.contains(now.month)) {
+          remainingMonths += 1;
+        }
+
+        forecastIncome =
+            totalIncomeSoFar + (avgMonthlySalary * remainingMonths);
+        hasData = totalIncomeSoFar > 0;
+      } else {
+        // It's January. Look at last year.
+        final lastYearRecords = store.records.where((r) =>
+            r.type == RecordType.income &&
+            !r.excludeFromBudget &&
+            r.createdAt.year == now.year - 1);
+
+        if (lastYearRecords.isNotEmpty) {
+          final lastYearSalaryRecords = lastYearRecords.where((r) {
+            final cat = store.categoryById(r.categoryId);
+            return cat?.name == '工资' ||
+                cat?.name == '奖金' ||
+                r.categoryId == 'salary' ||
+                r.categoryId == 'bonus';
+          }).toList();
+
+          final monthsWithSalary = <int>{};
+          double totalLastYearSalary = 0;
+          for (final r in lastYearSalaryRecords) {
+            monthsWithSalary.add(r.createdAt.month);
+            totalLastYearSalary += r.amount;
+          }
+
+          final avgLastYearSalary = monthsWithSalary.isNotEmpty
+              ? totalLastYearSalary / monthsWithSalary.length
+              : 0.0;
+
+          final currentJanIncome =
+              currentYearRecords.fold(0.0, (sum, r) => sum + r.amount);
+
+          int remainingMonths = 11;
+          if (!salaryBonusRecords.any((r) => r.createdAt.month == 1)) {
+            remainingMonths += 1;
+          }
+
+          forecastIncome =
+              currentJanIncome + (avgLastYearSalary * remainingMonths);
+          hasData = forecastIncome > 0;
+        }
+      }
+
+      if (hasData && forecastIncome > 0) {
+        insights.add(TextSpan(
+            text:
+                '按目前的平均收入情况，预计今年总收入约为 ${formatShortCurrency(forecastIncome)}。'));
+      }
+    }
 
     return Card(
       child: Padding(
@@ -688,141 +844,14 @@ class _InsightsSummaryCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: Text(item, style: theme.textTheme.bodyMedium),
+                      child: Text.rich(
+                        item,
+                        style: defaultStyle,
+                      ),
                     ),
                   ],
                 ),
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MonthlyHistoryCard extends StatelessWidget {
-  const _MonthlyHistoryCard({required this.store, required this.type});
-
-  final PocketMeowStore store;
-  final RecordType type;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final data = store.historyBarData;
-    final isExpense = type == RecordType.expense;
-
-    final maxAmount = data.fold<double>(
-      0,
-      (maxValue, item) => max(maxValue, isExpense ? item.expense : item.income),
-    );
-
-    final typeName = isExpense ? '消费' : '收入';
-    final title = store.reportType == ReportType.yearly
-        ? '每月$typeName'
-        : (store.reportType == ReportType.monthly
-            ? '每周$typeName'
-            : '每日$typeName');
-
-    final barColor = isExpense ? AppTheme.warning : AppTheme.mintDeep;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: theme.textTheme.titleLarge),
-            const SizedBox(height: 18),
-            SizedBox(
-              height: 220,
-              child: BarChart(
-                BarChartData(
-                  alignment: BarChartAlignment.spaceAround,
-                  maxY: maxAmount == 0 ? 100 : maxAmount * 1.2,
-                  gridData: FlGridData(
-                    show: true,
-                    drawVerticalLine: false,
-                    horizontalInterval: maxAmount == 0 ? 25 : maxAmount / 4,
-                    getDrawingHorizontalLine: (_) => const FlLine(
-                      color: Color(0xFFE8EDF0),
-                      strokeWidth: 1,
-                    ),
-                  ),
-                  borderData: FlBorderData(show: false),
-                  barTouchData: BarTouchData(
-                    handleBuiltInTouches: true,
-                    touchTooltipData: BarTouchTooltipData(
-                      fitInsideHorizontally: true,
-                      fitInsideVertically: true,
-                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                        final label = data[group.x.toInt()].label;
-                        final amount = formatChartTooltipAmount(rod.toY);
-                        final prefix = isExpense ? '支出: ' : '收入: ';
-                        return BarTooltipItem(
-                          '$label\n$prefix$amount',
-                          const TextStyle(
-                              color: Colors.white, fontWeight: FontWeight.bold),
-                        );
-                      },
-                    ),
-                  ),
-                  titlesData: FlTitlesData(
-                    topTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false)),
-                    rightTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false)),
-                    leftTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false)),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        getTitlesWidget: (value, meta) {
-                          final index = value.toInt();
-                          if (index < 0 || index >= data.length) {
-                            return const SizedBox.shrink();
-                          }
-                          // Only show partial labels if too many (like yearly view)
-                          if (store.reportType == ReportType.yearly) {
-                            if (index % 2 != 0 && index != data.length - 1) {
-                              return const SizedBox.shrink();
-                            }
-                          }
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text(
-                              data[index].label,
-                              style: theme.textTheme.bodySmall,
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  barGroups: List.generate(data.length, (index) {
-                    final item = data[index];
-                    return BarChartGroupData(
-                      x: index,
-                      barsSpace: 6,
-                      barRods: [
-                        BarChartRodData(
-                          toY: isExpense ? item.expense : item.income,
-                          width: 10,
-                          borderRadius: BorderRadius.circular(999),
-                          color: barColor,
-                        ),
-                      ],
-                    );
-                  }),
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                _LegendDot(color: barColor, label: isExpense ? '支出' : '收入'),
-              ],
             ),
           ],
         ),
@@ -899,17 +928,8 @@ void _showCategoryRecords(BuildContext context, ExpenseCategory category) {
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (_) => DraggableScrollableSheet(
-      initialChildSize: 0.6,
-      minChildSize: 0.4,
-      maxChildSize: 0.9,
-      expand: false,
-      builder: (_, scrollController) {
-        return _CategoryRecordsSheet(
-          category: category,
-          scrollController: scrollController,
-        );
-      },
+    builder: (_) => _CategoryRecordsSheet(
+      category: category,
     ),
   );
 }
@@ -917,101 +937,186 @@ void _showCategoryRecords(BuildContext context, ExpenseCategory category) {
 class _CategoryRecordsSheet extends StatelessWidget {
   const _CategoryRecordsSheet({
     required this.category,
-    required this.scrollController,
   });
 
   final ExpenseCategory category;
-  final ScrollController scrollController;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final store = PocketMeowScope.watch(context);
 
-    final records = store.currentMonthRecords
-        .where((r) => r.categoryId == category.id)
-        .toList();
-
-    final grouped = groupByDay(records, store);
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: Color(category.colorValue).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  iconForCategory(category.iconKey),
-                  size: 18,
-                  color: Color(category.colorValue),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text('${category.name} 交易记录', style: theme.textTheme.titleLarge),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
+    return DraggableScrollableSheet(
+      initialChildSize: 0.85,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.scaffoldBackgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           ),
-          const SizedBox(height: 16),
-          if (grouped.isEmpty)
-            const Expanded(
-              child: Center(child: Text('没有交易记录')),
-            )
-          else
-            Expanded(
-              child: ListView.builder(
-                controller: scrollController,
-                itemCount: grouped.length,
-                itemBuilder: (context, index) {
-                  final section = grouped[index];
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Text(
-                          formatDayLabel(section.date),
-                          style: theme.textTheme.titleSmall
-                              ?.copyWith(color: AppTheme.muted),
+          child: ListenableBuilder(
+            listenable: PocketMeowScope.read(context),
+            builder: (context, _) {
+              final store = PocketMeowScope.read(context);
+              final records = store.currentMonthRecords
+                  .where((r) => r.categoryId == category.id)
+                  .toList();
+
+              if (records.isEmpty) {
+                return Center(
+                  child: Text('没有记录', style: theme.textTheme.bodyLarge),
+                );
+              }
+
+              // 按天分组
+              final Map<DateTime, List<ExpenseRecord>> grouped = {};
+              for (final record in records) {
+                final date = DateTime(
+                  record.createdAt.year,
+                  record.createdAt.month,
+                  record.createdAt.day,
+                );
+                grouped.putIfAbsent(date, () => []).add(record);
+              }
+
+              final sortedKeys = grouped.keys.toList()
+                ..sort((a, b) => b.compareTo(a));
+
+              return Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: theme.cardColor,
+                      borderRadius:
+                          const BorderRadius.vertical(top: Radius.circular(24)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.03),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
                         ),
-                      ),
-                      ...section.items.map((item) => Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: RecordRow(
-                              item: item,
-                              onTap: () {
-                                showModalBottomSheet<void>(
-                                  context: context,
-                                  isScrollControlled: true,
-                                  backgroundColor: Colors.transparent,
-                                  builder: (_) =>
-                                      AddExpenseSheet(expense: item.record),
-                                );
-                              },
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Color(category.colorValue)
+                                .withValues(alpha: 0.15),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            iconForCategory(category.iconKey),
+                            color: Color(category.colorValue),
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(category.name,
+                                  style: theme.textTheme.titleLarge),
+                              const SizedBox(height: 4),
+                              Text(
+                                '共 ${records.length} 笔记录',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: AppTheme.muted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
+                          color: AppTheme.muted,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView.builder(
+                      controller: scrollController,
+                      padding: const EdgeInsets.all(16),
+                      itemCount: sortedKeys.length,
+                      itemBuilder: (context, index) {
+                        final date = sortedKeys[index];
+                        final items = grouped[date]!
+                          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                  left: 8, bottom: 8, top: 16),
+                              child: Text(
+                                formatDayLabel(date),
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  color: AppTheme.muted,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ),
-                          )),
-                    ],
-                  );
-                },
-              ),
-            ),
-        ],
-      ),
+                            Card(
+                              margin: EdgeInsets.zero,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: Column(
+                                children: items.map((record) {
+                                  final item = RecordItem(
+                                    id: record.id,
+                                    title: category.name,
+                                    category: category.name,
+                                    amount: record.amount,
+                                    time:
+                                        '${record.createdAt.hour.toString().padLeft(2, '0')}:${record.createdAt.minute.toString().padLeft(2, '0')}',
+                                    iconKey: category.iconKey,
+                                    record: record,
+                                    type: record.type,
+                                  );
+                                  return Column(
+                                    children: [
+                                      RecordRow(
+                                        item: item,
+                                        onTap: () {
+                                          showModalBottomSheet<void>(
+                                            context: context,
+                                            isScrollControlled: true,
+                                            backgroundColor: Colors.transparent,
+                                            builder: (_) => AddExpenseSheet(
+                                                expense: item.record),
+                                          );
+                                        },
+                                      ),
+                                      if (record != items.last)
+                                        const Divider(
+                                            height: 1,
+                                            indent: 64,
+                                            endIndent: 16),
+                                    ],
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }

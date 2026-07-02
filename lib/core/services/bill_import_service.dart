@@ -9,6 +9,32 @@ import '../../app/state/pocket_meow_store.dart';
 import '../../data/models/app_models.dart';
 
 class BillImportService {
+  DateTime? _parseDateRobust(String timeStr) {
+    try {
+      return DateTime.parse(timeStr.replaceAll('/', '-'));
+    } catch (e) {
+      try {
+        var parts = timeStr.trim().split(RegExp(r'\s+'));
+        var dateParts = parts[0].replaceAll('/', '-').split('-');
+        if (dateParts.length < 3) return null;
+        int year = int.parse(dateParts[0]);
+        int month = int.parse(dateParts[1]);
+        int day = int.parse(dateParts[2]);
+
+        int hour = 0, minute = 0, second = 0;
+        if (parts.length > 1) {
+          var timeParts = parts[1].split(':');
+          if (timeParts.isNotEmpty) hour = int.parse(timeParts[0]);
+          if (timeParts.length > 1) minute = int.parse(timeParts[1]);
+          if (timeParts.length > 2) second = int.parse(timeParts[2]);
+        }
+        return DateTime(year, month, day, hour, minute, second);
+      } catch (e) {
+        return null;
+      }
+    }
+  }
+
   String _inferCategoryId(
       String note, String categoryStr, RecordType type, PocketMeowStore store) {
     String categoryId = type == RecordType.income ? 'transfer' : 'daily';
@@ -234,9 +260,9 @@ class BillImportService {
           categoryStr.contains('红包') ||
           categoryStr.contains('群收款')) {
         targetName = '转账';
-      } else if (categoryStr.contains('日用') ||
-          categoryStr.contains('百货') ||
-          categoryStr.contains('服饰')) {
+      } else if (categoryStr.contains('日用') || categoryStr.contains('百货')) {
+        targetName = '日用';
+      } else if (categoryStr.contains('服饰') || categoryStr.contains('数码电器')) {
         targetName = '购物';
       }
 
@@ -281,7 +307,8 @@ class BillImportService {
         amountIdx = -1,
         methodIdx = -1,
         categoryIdx = -1,
-        counterpartyIdx = -1;
+        counterpartyIdx = -1,
+        statusIdx = -1;
     bool foundHeader = false;
 
     for (var row in rows) {
@@ -295,6 +322,7 @@ class BillImportService {
           if (val == '收/付款方式' || val == '支付方式') methodIdx = i;
           if (val == '交易分类') categoryIdx = i;
           if (val == '交易对方') counterpartyIdx = i;
+          if (val == '交易状态') statusIdx = i;
         }
         if (timeIdx != -1 && amountIdx != -1) {
           foundHeader = true;
@@ -306,12 +334,8 @@ class BillImportService {
         var timeStr = row[timeIdx]?.toString().trim() ?? '';
         if (timeStr.isEmpty) continue;
 
-        DateTime? time;
-        try {
-          time = DateTime.parse(timeStr);
-        } catch (e) {
-          continue;
-        }
+        DateTime? time = _parseDateRobust(timeStr);
+        if (time == null) continue;
 
         var itemStr =
             itemIdx != -1 ? (row[itemIdx]?.toString().trim() ?? '') : '';
@@ -327,16 +351,39 @@ class BillImportService {
         var counterpartyStr = counterpartyIdx != -1
             ? (row[counterpartyIdx]?.toString().trim() ?? '')
             : '';
+        var statusStr =
+            statusIdx != -1 ? (row[statusIdx]?.toString().trim() ?? '') : '';
 
-        if (counterpartyStr.contains('支付宝小荷包') ||
-            counterpartyStr.contains('小金库')) {
+        if (statusStr == '交易关闭' || statusStr == '退款给指定账户') continue;
+
+        if (itemStr == '支付宝小荷包-转出到银行卡' || itemStr == '支付宝小荷包-自动攒') {
           continue;
         }
 
-        if (typeStr == '/' || typeStr == '不计收支') continue;
-
-        RecordType type =
-            typeStr.contains('收入') ? RecordType.income : RecordType.expense;
+        RecordType type;
+        if (typeStr.contains('收入')) {
+          type = RecordType.income;
+        } else if (typeStr.contains('支出')) {
+          type = RecordType.expense;
+        } else if (statusStr.contains('退款') ||
+            itemStr.contains('退款') ||
+            categoryStr.contains('退款')) {
+          type = RecordType.income;
+        } else if (itemStr.contains('收益发放') || itemStr.contains('收款')) {
+          type = RecordType.income;
+        } else if (typeStr == '不计收支' || typeStr == '/') {
+          if (statusStr != '交易成功') continue;
+          if (itemStr.contains('充值') ||
+              itemStr.contains('转入') ||
+              itemStr.contains('转出') ||
+              itemStr.contains('提现') ||
+              itemStr.contains('信用卡还款')) {
+            continue;
+          }
+          type = RecordType.expense;
+        } else {
+          continue;
+        }
 
         amountStr = amountStr.replaceAll('¥', '').replaceAll(',', '').trim();
         double? amount = double.tryParse(amountStr);
@@ -411,12 +458,8 @@ class BillImportService {
           var timeStr = row[timeIdx]?.value?.toString() ?? '';
           if (timeStr.isEmpty) continue;
 
-          DateTime? time;
-          try {
-            time = DateTime.parse(timeStr);
-          } catch (e) {
-            continue;
-          }
+          DateTime? time = _parseDateRobust(timeStr);
+          if (time == null) continue;
 
           var itemStr =
               itemIdx != -1 ? (row[itemIdx]?.value?.toString() ?? '') : '';
