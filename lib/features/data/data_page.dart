@@ -124,6 +124,28 @@ class _SpendingDistributionCard extends StatelessWidget {
         ? '年'
         : (store.reportType == ReportType.weekly ? '周' : '月');
 
+    List<CategorySpendData> pieItems = [];
+    if (items.length > 5) {
+      pieItems.addAll(items.take(5));
+      final otherAmount =
+          items.skip(5).fold(0.0, (sum, item) => sum + item.amount);
+      pieItems.add(CategorySpendData(
+        category: const ExpenseCategory(
+          id: 'other',
+          name: '其他',
+          iconKey: 'other',
+          colorValue: 0xFF8E8CD8,
+          limit: 0,
+          type: RecordType.expense,
+          isSystem: true,
+        ),
+        amount: otherAmount,
+        count: items.skip(5).fold(0, (sum, item) => sum + item.count),
+      ));
+    } else {
+      pieItems = List.from(items);
+    }
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(18),
@@ -156,24 +178,41 @@ class _SpendingDistributionCard extends StatelessWidget {
                       PieChartData(
                         centerSpaceRadius: 50,
                         sectionsSpace: 2,
-                        sections: items
-                            .map(
-                              (item) => PieChartSectionData(
-                                color: Color(item.category.colorValue),
-                                value: item.amount,
-                                radius: 46,
-                                title: '', // No title on pie
-                                badgeWidget: Text(
-                                  item.category.name,
+                        sections: pieItems.map(
+                          (item) {
+                            final percentage = item.amount > 0 && total > 0
+                                ? (item.amount / total * 100)
+                                : 0.0;
+                            // 使用 replaceFirst 来抹除末尾多余的 0
+                            final percentStr = percentage
+                                .toStringAsFixed(2)
+                                .replaceFirst(RegExp(r'\.?0*$'), '');
+
+                            return PieChartSectionData(
+                              color: Color(item.category.colorValue),
+                              value: item.amount,
+                              radius: 46,
+                              title: '', // No title on pie
+                              badgeWidget: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 2),
+                                decoration: const BoxDecoration(
+                                  border: Border(
+                                      bottom: BorderSide(
+                                          color: Colors.black26, width: 0.5)),
+                                ),
+                                child: Text(
+                                  '${item.category.name} $percentStr%',
                                   style: const TextStyle(
                                     color: Colors.black87,
                                     fontSize: 12,
                                   ),
                                 ),
-                                badgePositionPercentageOffset: 1.5,
                               ),
-                            )
-                            .toList(),
+                              badgePositionPercentageOffset: 1.5,
+                            );
+                          },
+                        ).toList(),
                       ),
                     ),
                   ),
@@ -364,16 +403,28 @@ class _TrendCard extends StatelessWidget {
                   lineTouchData: LineTouchData(
                     handleBuiltInTouches: true,
                     touchTooltipData: LineTouchTooltipData(
+                      fitInsideHorizontally: true,
+                      fitInsideVertically: true,
                       getTooltipItems: (touchedSpots) {
                         return touchedSpots.map((spot) {
                           final label = data[spot.x.toInt()].label;
                           final amount = formatChartTooltipAmount(spot.y);
-                          return LineTooltipItem(
-                            '$label\n$amount',
-                            const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold),
-                          );
+                          final prefix = spot.barIndex == 0 ? '支出: ' : '收入: ';
+                          if (spot == touchedSpots.first) {
+                            return LineTooltipItem(
+                              '$label\n$prefix$amount',
+                              const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold),
+                            );
+                          } else {
+                            return LineTooltipItem(
+                              '$prefix$amount',
+                              const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold),
+                            );
+                          }
                         }).toList();
                       },
                     ),
@@ -553,11 +604,14 @@ class _MonthlyHistoryCard extends StatelessWidget {
                   barTouchData: BarTouchData(
                     handleBuiltInTouches: true,
                     touchTooltipData: BarTouchTooltipData(
+                      fitInsideHorizontally: true,
+                      fitInsideVertically: true,
                       getTooltipItem: (group, groupIndex, rod, rodIndex) {
                         final label = data[group.x.toInt()].label;
                         final amount = formatChartTooltipAmount(rod.toY);
+                        final prefix = rodIndex == 0 ? '支出: ' : '收入: ';
                         return BarTooltipItem(
-                          '$label\n$amount',
+                          '$label\n$prefix$amount',
                           const TextStyle(
                               color: Colors.white, fontWeight: FontWeight.bold),
                         );

@@ -1,7 +1,7 @@
 name: pocket_meow
 description: PocketMeow is a premium minimal expense tracker.
 publish_to: "none"
-version: 1.0.4+1000004
+version: 1.0.5+15
 
 environment:
   sdk: ^3.5.0
