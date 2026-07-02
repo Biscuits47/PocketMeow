@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/state/pocket_meow_store.dart';
@@ -615,7 +616,13 @@ Future<void> _exportData(BuildContext context, PocketMeowStore store) async {
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('数据已导出至: ${file.path}')),
+        const SnackBar(content: Text('数据已导出，正在唤起分享...')),
+      );
+      // Share the file
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: '这是我的钱喵记账数据备份文件',
+        subject: '钱喵记账数据备份',
       );
     }
   } catch (e) {

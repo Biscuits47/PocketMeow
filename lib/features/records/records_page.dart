@@ -33,7 +33,7 @@ class RecordsPage extends StatelessWidget {
             r.createdAt.day == now.day)
         .fold(0.0, (sum, r) => sum + r.amount);
 
-    final actualMonthSpent = store.records
+    final actualMonthSpentForBudget = store.records
         .where((r) =>
             r.type == RecordType.expense &&
             r.createdAt.year == now.year &&
@@ -41,11 +41,25 @@ class RecordsPage extends StatelessWidget {
             !r.excludeFromBudget)
         .fold(0.0, (sum, r) => sum + r.amount);
 
+    final actualMonthSpentTotal = store.records
+        .where((r) =>
+            r.type == RecordType.expense &&
+            r.createdAt.year == now.year &&
+            r.createdAt.month == now.month)
+        .fold(0.0, (sum, r) => sum + r.amount);
+
+    final actualMonthIncome = store.records
+        .where((r) =>
+            r.type == RecordType.income &&
+            r.createdAt.year == now.year &&
+            r.createdAt.month == now.month)
+        .fold(0.0, (sum, r) => sum + r.amount);
+
     final actualBudgetUsage = store.totalBudget <= 0
         ? 0.0
-        : (actualMonthSpent / store.totalBudget).clamp(0.0, 1.0);
+        : (actualMonthSpentForBudget / store.totalBudget).clamp(0.0, 1.0);
 
-    final actualRemainingBudget = store.totalBudget - actualMonthSpent;
+    final actualBalance = store.totalBudget - actualMonthSpentTotal;
 
     return SafeArea(
       child: Column(
@@ -167,7 +181,8 @@ class RecordsPage extends StatelessWidget {
                                     ),
                                     const SizedBox(height: 6),
                                     Text(
-                                      formatShortCurrency(actualMonthSpent),
+                                      formatShortCurrency(
+                                          actualMonthSpentTotal),
                                       style:
                                           theme.textTheme.titleMedium?.copyWith(
                                         color: Colors.white,
@@ -181,7 +196,7 @@ class RecordsPage extends StatelessWidget {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      '总预算',
+                                      '本月收入',
                                       style:
                                           theme.textTheme.bodySmall?.copyWith(
                                         color: Colors.white
@@ -190,7 +205,7 @@ class RecordsPage extends StatelessWidget {
                                     ),
                                     const SizedBox(height: 6),
                                     Text(
-                                      formatShortCurrency(store.totalBudget),
+                                      formatShortCurrency(actualMonthIncome),
                                       style:
                                           theme.textTheme.titleMedium?.copyWith(
                                         color: Colors.white,
@@ -213,8 +228,7 @@ class RecordsPage extends StatelessWidget {
                                     ),
                                     const SizedBox(height: 6),
                                     Text(
-                                      formatShortCurrency(
-                                          actualRemainingBudget),
+                                      formatShortCurrency(actualBalance),
                                       style:
                                           theme.textTheme.titleMedium?.copyWith(
                                         color: Colors.white,

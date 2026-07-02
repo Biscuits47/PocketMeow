@@ -76,8 +76,8 @@ if not exist "%TARGET_DIR%" (
   mkdir "%TARGET_DIR%"
 )
 
-for /f "tokens=2" %%v in ('findstr "^version: " "%PROJECT_DIR%pubspec.yaml"') do set "APP_VERSION=%%v"
-set "APP_VERSION=%APP_VERSION:+=_%"
+for /f "tokens=2" %%v in ('findstr "^version: " "%PROJECT_DIR%pubspec.yaml"') do set "FULL_VERSION=%%v"
+for /f "tokens=1 delims=+" %%a in ("%FULL_VERSION%") do set "APP_VERSION=%%a"
 set "APK_FILENAME=PocketMeow_v%APP_VERSION%.apk"
 
 echo [PocketMeow] Copying APK to %TARGET_DIR%...

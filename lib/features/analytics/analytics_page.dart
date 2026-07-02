@@ -183,6 +183,7 @@ class _SpendingDistributionCard extends StatelessWidget {
                     Expanded(
                       child: PieChart(
                         PieChartData(
+                          startDegreeOffset: -90,
                           centerSpaceRadius: 42,
                           sectionsSpace: 2,
                           sections: items

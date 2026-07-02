@@ -146,6 +146,152 @@ const List<CategoryIconOption> kCategoryIconOptions = [
     label: '社交',
     icon: Icons.people_outline_rounded,
   ),
+  // 新增图标 (Added icons)
+  CategoryIconOption(
+    key: 'water_drop',
+    label: '水费',
+    icon: Icons.water_drop_outlined,
+  ),
+  CategoryIconOption(
+    key: 'electric_bolt',
+    label: '电费',
+    icon: Icons.electric_bolt_outlined,
+  ),
+  CategoryIconOption(
+    key: 'gas',
+    label: '燃气',
+    icon: Icons.local_fire_department_outlined,
+  ),
+  CategoryIconOption(
+    key: 'wifi',
+    label: '宽带',
+    icon: Icons.wifi_outlined,
+  ),
+  CategoryIconOption(
+    key: 'cell_tower',
+    label: '通信',
+    icon: Icons.cell_tower_outlined,
+  ),
+  CategoryIconOption(
+    key: 'monitor',
+    label: '电视',
+    icon: Icons.monitor_outlined,
+  ),
+  CategoryIconOption(
+    key: 'delivery',
+    label: '快递',
+    icon: Icons.local_shipping_outlined,
+  ),
+  CategoryIconOption(
+    key: 'cake',
+    label: '蛋糕',
+    icon: Icons.cake_outlined,
+  ),
+  CategoryIconOption(
+    key: 'local_bar',
+    label: '酒水',
+    icon: Icons.local_bar_outlined,
+  ),
+  CategoryIconOption(
+    key: 'fastfood',
+    label: '快餐',
+    icon: Icons.fastfood_outlined,
+  ),
+  CategoryIconOption(
+    key: 'store',
+    label: '商店',
+    icon: Icons.storefront_outlined,
+  ),
+  CategoryIconOption(
+    key: 'hotel',
+    label: '酒店',
+    icon: Icons.hotel_outlined,
+  ),
+  CategoryIconOption(
+    key: 'directions_bus',
+    label: '巴士',
+    icon: Icons.directions_bus_outlined,
+  ),
+  CategoryIconOption(
+    key: 'subway',
+    label: '地铁',
+    icon: Icons.subway_outlined,
+  ),
+  CategoryIconOption(
+    key: 'local_taxi',
+    label: '出租车',
+    icon: Icons.local_taxi_outlined,
+  ),
+  CategoryIconOption(
+    key: 'directions_bike',
+    label: '单车',
+    icon: Icons.directions_bike_outlined,
+  ),
+  CategoryIconOption(
+    key: 'pedal_bike',
+    label: '自行车',
+    icon: Icons.pedal_bike_outlined,
+  ),
+  CategoryIconOption(
+    key: 'savings',
+    label: '储蓄',
+    icon: Icons.savings_outlined,
+  ),
+  CategoryIconOption(
+    key: 'currency_exchange',
+    label: '兑换',
+    icon: Icons.currency_exchange_outlined,
+  ),
+  CategoryIconOption(
+    key: 'credit_card',
+    label: '信用卡',
+    icon: Icons.credit_card_outlined,
+  ),
+  CategoryIconOption(
+    key: 'account_balance',
+    label: '银行',
+    icon: Icons.account_balance_outlined,
+  ),
+  CategoryIconOption(
+    key: 'monetization_on',
+    label: '金钱',
+    icon: Icons.monetization_on_outlined,
+  ),
+  CategoryIconOption(
+    key: 'stroller',
+    label: '婴儿车',
+    icon: Icons.stroller_outlined,
+  ),
+  CategoryIconOption(
+    key: 'spa',
+    label: '水疗',
+    icon: Icons.spa_outlined,
+  ),
+  CategoryIconOption(
+    key: 'brush',
+    label: '美妆',
+    icon: Icons.brush_outlined,
+  ),
+  CategoryIconOption(
+    key: 'chair',
+    label: '家具',
+    icon: Icons.chair_outlined,
+  ),
+  CategoryIconOption(
+    key: 'camera',
+    label: '相机',
+    icon: Icons.camera_alt_outlined,
+  ),
+  CategoryIconOption(
+    key: 'smartphone',
+    label: '手机',
+    icon: Icons.smartphone_outlined,
+  ),
+  CategoryIconOption(
+    key: 'watch',
+    label: '手表',
+    icon: Icons.watch_outlined,
+  ),
 ];
 
 String formatCurrency(double value) {

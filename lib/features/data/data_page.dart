@@ -125,25 +125,30 @@ class _SpendingDistributionCard extends StatelessWidget {
         : (store.reportType == ReportType.weekly ? '周' : '月');
 
     List<CategorySpendData> pieItems = [];
-    if (items.length > 5) {
-      pieItems.addAll(items.take(5));
+    final maxPieItems = 5;
+
+    if (items.length > maxPieItems) {
+      pieItems = items.take(maxPieItems).toList();
       final otherAmount =
-          items.skip(5).fold(0.0, (sum, item) => sum + item.amount);
-      pieItems.add(CategorySpendData(
-        category: const ExpenseCategory(
-          id: 'other',
-          name: '其他',
-          iconKey: 'other',
-          colorValue: 0xFF8E8CD8,
-          limit: 0,
-          type: RecordType.expense,
-          isSystem: true,
-        ),
-        amount: otherAmount,
-        count: items.skip(5).fold(0, (sum, item) => sum + item.count),
-      ));
+          items.skip(maxPieItems).fold(0.0, (sum, item) => sum + item.amount);
+      if (otherAmount > 0) {
+        pieItems.add(CategorySpendData(
+          category: const ExpenseCategory(
+            id: 'other',
+            name: '其他',
+            iconKey: 'other',
+            colorValue: 0xFF8E8CD8,
+            limit: 0,
+            type: RecordType.expense,
+            isSystem: true,
+          ),
+          amount: otherAmount,
+          count:
+              items.skip(maxPieItems).fold(0, (sum, item) => sum + item.count),
+        ));
+      }
     } else {
-      pieItems = List.from(items);
+      pieItems.addAll(items);
     }
 
     return Card(
@@ -174,46 +179,31 @@ class _SpendingDistributionCard extends StatelessWidget {
                 children: [
                   SizedBox(
                     height: 240,
-                    child: PieChart(
-                      PieChartData(
-                        centerSpaceRadius: 50,
-                        sectionsSpace: 2,
-                        sections: pieItems.map(
-                          (item) {
-                            final percentage = item.amount > 0 && total > 0
-                                ? (item.amount / total * 100)
-                                : 0.0;
-                            // 使用 replaceFirst 来抹除末尾多余的 0
-                            final percentStr = percentage
-                                .toStringAsFixed(2)
-                                .replaceFirst(RegExp(r'\.?0*$'), '');
-
-                            return PieChartSectionData(
-                              color: Color(item.category.colorValue),
-                              value: item.amount,
-                              radius: 46,
-                              title: '', // No title on pie
-                              badgeWidget: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 4, vertical: 2),
-                                decoration: const BoxDecoration(
-                                  border: Border(
-                                      bottom: BorderSide(
-                                          color: Colors.black26, width: 0.5)),
-                                ),
-                                child: Text(
-                                  '${item.category.name} $percentStr%',
-                                  style: const TextStyle(
-                                    color: Colors.black87,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                              badgePositionPercentageOffset: 1.5,
-                            );
-                          },
-                        ).toList(),
-                      ),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        PieChart(
+                          PieChartData(
+                            startDegreeOffset: -90,
+                            centerSpaceRadius: 50,
+                            sectionsSpace: 2,
+                            sections: pieItems.map(
+                              (item) {
+                                return PieChartSectionData(
+                                  color: Color(item.category.colorValue),
+                                  value: item.amount,
+                                  radius: 46,
+                                  title: '',
+                                );
+                              },
+                            ).toList(),
+                          ),
+                        ),
+                        _PieChartLabelOverlay(
+                          items: pieItems,
+                          total: total,
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -506,19 +496,22 @@ class _InsightsSummaryCard extends StatelessWidget {
         ? '年'
         : (store.reportType == ReportType.weekly ? '周' : '月');
 
-    final currentExp = store.budgetConsumed;
+    final currentExp = store.monthSpent;
     final currentInc = store.monthIncome;
-    final currentNet = currentInc - currentExp;
+    final currentBalance = store.totalBudget - currentExp;
 
     final prevExp = store.previousPeriodExpense;
     final prevInc = store.previousPeriodIncome;
-    final prevNet = store.previousPeriodNet;
+
+    final balanceText = currentBalance >= 0
+        ? '结余 ${formatShortCurrency(currentBalance)}'
+        : '超支 ${formatShortCurrency(currentBalance.abs())}';
 
     final insights = [
       if (topCategory != null)
         '${topCategory.category.name} 是本$periodName最大支出，占比 ${(topCategory.shareOf(store.monthSpent) * 100).round()}%',
       '与上$periodName相比，${_formatComparison(currentExp, prevExp, '支出')}，${_formatComparison(currentInc, prevInc, '收入')}。',
-      '本$periodName总结余为 ${formatShortCurrency(currentNet)}，相比上$periodName${currentNet >= prevNet ? '增加' : '减少'} ${formatShortCurrency((currentNet - prevNet).abs())}。'
+      '本$periodName$balanceText，支出占收入的 ${currentInc > 0 ? ((currentExp / currentInc) * 100).round() : 0}%。'
     ];
 
     return Card(
@@ -872,5 +865,153 @@ class _CategoryRecordsSheet extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _PieChartLabelOverlay extends StatelessWidget {
+  const _PieChartLabelOverlay({
+    required this.items,
+    required this.total,
+  });
+
+  final List<CategorySpendData> items;
+  final double total;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _PieChartLabelPainter(
+        items: items,
+        total: total,
+      ),
+      child: const SizedBox.expand(),
+    );
+  }
+}
+
+class _PieChartLabelPainter extends CustomPainter {
+  _PieChartLabelPainter({
+    required this.items,
+    required this.total,
+  });
+
+  final List<CategorySpendData> items;
+  final double total;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (items.isEmpty || total <= 0) return;
+
+    final center = Offset(size.width / 2, size.height / 2);
+    const pieOuterRadius = 96.0; // centerSpaceRadius(50) + radius(46)
+    const line1Length = 14.0;
+    const line2Length = 16.0;
+
+    double currentAngle = -90.0;
+
+    // Adjust these to handle label collisions
+    List<Rect> labelRects = [];
+
+    for (final item in items) {
+      final percentage = item.amount / total;
+      final angle = percentage * 360.0;
+      final midAngle = currentAngle + angle / 2;
+
+      final radians = midAngle * (3.1415926535 / 180.0);
+
+      // Start from the outer edge of the pie
+      final x1 = center.dx + pieOuterRadius * cos(radians);
+      final y1 = center.dy + pieOuterRadius * sin(radians);
+
+      // Angled line outwards
+      final x2 = center.dx + (pieOuterRadius + line1Length) * cos(radians);
+      var y2 = center.dy + (pieOuterRadius + line1Length) * sin(radians);
+
+      // Collision detection and adjustment for y2
+      final isRightSide = cos(radians) >= 0;
+
+      final percentStr = (percentage * 100).toStringAsFixed(2);
+      final labelText = '${item.category.name} $percentStr%';
+
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: labelText,
+          style: const TextStyle(
+            color: Color(0xFF5E656B),
+            fontSize: 12,
+            fontWeight: FontWeight.w400,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+
+      double labelY = y2 - textPainter.height / 2;
+      double labelXCandidate = isRightSide
+          ? x2 + line2Length + 4
+          : x2 - line2Length - textPainter.width - 4;
+
+      Rect currentRect = Rect.fromLTWH(
+          labelXCandidate, labelY, textPainter.width, textPainter.height);
+
+      // Simple collision avoidance: push based on side
+      bool collision = true;
+      int iterations = 0;
+      while (collision && iterations < 20) {
+        collision = false;
+        for (final rect in labelRects) {
+          final inflatedRect = rect.inflate(4.0);
+          if (inflatedRect.overlaps(currentRect)) {
+            collision = true;
+            // Right side: labels go top to bottom, so push down
+            // Left side: labels go bottom to top, so push up
+            if (isRightSide) {
+              y2 += 14; // Push down
+            } else {
+              y2 -= 14; // Push up
+            }
+            labelY = y2 - textPainter.height / 2;
+            currentRect = Rect.fromLTWH(
+                labelXCandidate, labelY, textPainter.width, textPainter.height);
+            break;
+          }
+        }
+        iterations++;
+      }
+      labelRects.add(currentRect);
+
+      // Horizontal line
+      final x3 = x2 + (isRightSide ? line2Length : -line2Length);
+      final y3 = y2;
+
+      final linePaint = Paint()
+        ..color = Color(item.category.colorValue)
+        ..strokeWidth = 1.0
+        ..style = PaintingStyle.stroke;
+
+      final path = Path()
+        ..moveTo(x1, y1)
+        ..lineTo(x2, y2)
+        ..lineTo(x3, y3);
+
+      canvas.drawPath(path, linePaint);
+
+      double labelX;
+
+      if (isRightSide) {
+        labelX = x3 + 4;
+      } else {
+        labelX = x3 - textPainter.width - 4;
+      }
+
+      textPainter.paint(canvas, Offset(labelX, labelY));
+
+      currentAngle += angle;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_PieChartLabelPainter oldDelegate) {
+    return items != oldDelegate.items || total != oldDelegate.total;
   }
 }

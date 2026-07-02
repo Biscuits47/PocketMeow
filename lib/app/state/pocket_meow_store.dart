@@ -64,6 +64,87 @@ class PocketMeowStore extends ChangeNotifier {
       _totalBudget = snapshot.totalBudget;
       _categories = snapshot.categories;
       _records = snapshot.expenses;
+
+      // Ensure new default categories exist for existing users
+      bool needsPersist = false;
+      if (!_categories.any((c) => c.id == 'transfer')) {
+        _categories = [
+          ..._categories,
+          const ExpenseCategory(
+            id: 'transfer',
+            name: '转账',
+            colorValue: 0xFF4A90E2,
+            iconKey: 'wallet',
+            limit: 0,
+            type: RecordType.income,
+            isSystem: true,
+          )
+        ];
+        needsPersist = true;
+      }
+      if (!_categories.any((c) => c.id == 'rent')) {
+        _categories = [
+          ..._categories,
+          const ExpenseCategory(
+            id: 'rent',
+            name: '房租',
+            colorValue: 0xFF4DB6AC,
+            iconKey: 'home',
+            limit: 0,
+            type: RecordType.expense,
+            isSystem: true,
+          )
+        ];
+        needsPersist = true;
+      }
+      if (!_categories.any((c) => c.id == 'living_expenses')) {
+        _categories = [
+          ..._categories,
+          const ExpenseCategory(
+            id: 'living_expenses',
+            name: '生活缴费',
+            colorValue: 0xFF81C784,
+            iconKey: 'electric_bolt',
+            limit: 0,
+            type: RecordType.expense,
+            isSystem: true,
+          )
+        ];
+        needsPersist = true;
+      }
+      if (!_categories.any((c) => c.id == 'refund')) {
+        _categories = [
+          ..._categories,
+          const ExpenseCategory(
+            id: 'refund',
+            name: '退款',
+            colorValue: 0xFF81C784,
+            iconKey: 'wallet',
+            limit: 0,
+            type: RecordType.income,
+            isSystem: true,
+          )
+        ];
+        needsPersist = true;
+      }
+      if (!_categories.any((c) => c.id == 'transfer_out')) {
+        _categories = [
+          ..._categories,
+          const ExpenseCategory(
+            id: 'transfer_out',
+            name: '转账',
+            colorValue: 0xFF4A90E2,
+            iconKey: 'wallet',
+            limit: 0,
+            type: RecordType.expense,
+            isSystem: true,
+          )
+        ];
+        needsPersist = true;
+      }
+      if (needsPersist) {
+        await _persist();
+      }
     }
 
     _isReady = true;
@@ -166,7 +247,7 @@ class PocketMeowStore extends ChangeNotifier {
     return dailyAverage * daysInMonth;
   }
 
-  double get projectedBalance => _totalBudget - forecastEndOfMonth;
+  double get projectedBalance => monthIncome - forecastEndOfMonth;
 
   double get budgetUsage {
     if (_totalBudget <= 0) {
@@ -483,7 +564,34 @@ class PocketMeowStore extends ChangeNotifier {
   }
 
   List<CategorySpendData> get categorySpendData {
-    return categoryDataForType(RecordType.expense);
+    // Also include transfer type in expenses if user selected it for expense
+    // Actually, to make '转账' visible in chart, we should query all records or just map them properly.
+    // Wait, the user mentioned "转账" wasn't included in the analysis chart.
+    // This is because '转账' is currently defined as an income type (RecordType.income) in _categories!
+    // Let's modify categorySpendData to also check for RecordType.income if they are used as expenses,
+    // OR we should just get all categories that have expenses.
+    final records = currentMonthExpenses;
+    final amountMap = <String, double>{};
+    final countMap = <String, int>{};
+
+    for (final item in records) {
+      amountMap[item.categoryId] =
+          (amountMap[item.categoryId] ?? 0) + item.amount;
+      countMap[item.categoryId] = (countMap[item.categoryId] ?? 0) + 1;
+    }
+
+    final list = _categories
+        .map(
+          (category) => CategorySpendData(
+            category: category,
+            amount: amountMap[category.id] ?? 0.0,
+            count: countMap[category.id] ?? 0,
+          ),
+        )
+        .where((item) => item.amount > 0)
+        .toList()
+      ..sort((a, b) => b.amount.compareTo(a.amount));
+    return list;
   }
 
   List<TrendPointData> get periodTrendData {
@@ -806,6 +914,15 @@ class PocketMeowStore extends ChangeNotifier {
     _totalBudget = 6000;
     _categories = const [
       ExpenseCategory(
+        id: 'transfer',
+        name: '转账',
+        colorValue: 0xFF4A90E2,
+        iconKey: 'wallet',
+        limit: 0,
+        type: RecordType.income,
+        isSystem: true,
+      ),
+      ExpenseCategory(
         id: 'salary',
         name: '工资',
         colorValue: 0xFF143D35,
@@ -821,6 +938,24 @@ class PocketMeowStore extends ChangeNotifier {
         iconKey: 'gift',
         limit: 0,
         type: RecordType.income,
+        isSystem: true,
+      ),
+      ExpenseCategory(
+        id: 'refund',
+        name: '退款',
+        colorValue: 0xFF81C784,
+        iconKey: 'wallet',
+        limit: 0,
+        type: RecordType.income,
+        isSystem: true,
+      ),
+      ExpenseCategory(
+        id: 'transfer_out',
+        name: '转账',
+        colorValue: 0xFF4A90E2,
+        iconKey: 'wallet',
+        limit: 0,
+        type: RecordType.expense,
         isSystem: true,
       ),
       ExpenseCategory(
@@ -864,6 +999,24 @@ class PocketMeowStore extends ChangeNotifier {
         name: '日用',
         colorValue: 0xFF6FC3D6,
         iconKey: 'home',
+        limit: 0,
+        type: RecordType.expense,
+        isSystem: true,
+      ),
+      ExpenseCategory(
+        id: 'rent',
+        name: '房租',
+        colorValue: 0xFF4DB6AC,
+        iconKey: 'home',
+        limit: 0,
+        type: RecordType.expense,
+        isSystem: true,
+      ),
+      ExpenseCategory(
+        id: 'living_expenses',
+        name: '生活缴费',
+        colorValue: 0xFF81C784,
+        iconKey: 'electric_bolt',
         limit: 0,
         type: RecordType.expense,
         isSystem: true,
