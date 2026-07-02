@@ -6,6 +6,9 @@ import 'package:flutter/material.dart';
 import '../../app/state/pocket_meow_store.dart';
 import '../../app/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
+import '../../data/models/app_models.dart';
+import '../add_expense/add_expense_sheet.dart';
+import '../records/records_page.dart';
 import '../settings/settings_page.dart';
 
 class DataPage extends StatelessWidget {
@@ -38,9 +41,12 @@ class DataPage extends StatelessWidget {
                   width: double.infinity,
                   child: SegmentedButton<ReportType>(
                     segments: const [
-                      ButtonSegment(value: ReportType.weekly, label: Text('周报')),
-                      ButtonSegment(value: ReportType.monthly, label: Text('月报')),
-                      ButtonSegment(value: ReportType.yearly, label: Text('年报')),
+                      ButtonSegment(
+                          value: ReportType.weekly, label: Text('周报')),
+                      ButtonSegment(
+                          value: ReportType.monthly, label: Text('月报')),
+                      ButtonSegment(
+                          value: ReportType.yearly, label: Text('年报')),
                     ],
                     selected: {store.reportType},
                     onSelectionChanged: (set) {
@@ -112,7 +118,7 @@ class _SpendingDistributionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final items = store.categorySpendData.take(4).toList();
+    final items = store.categorySpendData.toList();
     final total = store.monthSpent;
     final periodName = store.reportType == ReportType.yearly
         ? '年'
@@ -177,82 +183,96 @@ class _SpendingDistributionCard extends StatelessWidget {
                       final index = entry.key;
                       final item = entry.value;
                       return Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        child: Row(
-                          children: [
-                            Text(
-                              '${index + 1}',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: AppTheme.muted,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Container(
-                              width: 36,
-                              height: 36,
-                              decoration: BoxDecoration(
-                                color: Color(item.category.colorValue)
-                                    .withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Icon(
-                                iconForCategory(item.category.iconKey),
-                                size: 18,
-                                color: Color(item.category.colorValue),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: () =>
+                              _showCategoryRecords(context, item.category),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Row(
+                              children: [
+                                Text(
+                                  '${index + 1}',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: AppTheme.muted,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    color: Color(item.category.colorValue)
+                                        .withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(
+                                    iconForCategory(item.category.iconKey),
+                                    size: 18,
+                                    color: Color(item.category.colorValue),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      Text(item.category.name,
-                                          style: theme.textTheme.titleMedium),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        '${item.count}笔',
-                                        style:
-                                            theme.textTheme.bodySmall?.copyWith(
-                                          color: AppTheme.muted,
+                                      Row(
+                                        children: [
+                                          Text(item.category.name,
+                                              style:
+                                                  theme.textTheme.titleMedium),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            '${item.count}笔',
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                              color: AppTheme.muted,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      ClipRRect(
+                                        borderRadius:
+                                            BorderRadius.circular(999),
+                                        child: LinearProgressIndicator(
+                                          value: item.shareOf(total),
+                                          minHeight: 4,
+                                          backgroundColor:
+                                              const Color(0xFFF1F4F6),
+                                          valueColor: AlwaysStoppedAnimation<
+                                                  Color>(
+                                              Color(item.category.colorValue)),
                                         ),
                                       ),
                                     ],
                                   ),
-                                  const SizedBox(height: 6),
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(999),
-                                    child: LinearProgressIndicator(
-                                      value: item.shareOf(total),
-                                      minHeight: 4,
-                                      backgroundColor: const Color(0xFFF1F4F6),
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                          Color(item.category.colorValue)),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  '${(item.shareOf(total) * 100).toStringAsFixed(2)}%',
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: AppTheme.muted,
-                                  ),
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  formatCurrency(item.amount),
-                                  style: theme.textTheme.titleMedium,
+                                const SizedBox(width: 16),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      '${(item.shareOf(total) * 100).toStringAsFixed(2)}%',
+                                      style:
+                                          theme.textTheme.bodyMedium?.copyWith(
+                                        color: AppTheme.muted,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      formatChartAmount(item.amount),
+                                      style: theme.textTheme.titleMedium,
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
-                          ],
+                          ),
                         ),
                       );
                     }).toList(),
@@ -274,11 +294,15 @@ class _TrendCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final data = store.recentDailySpend;
+    final data = store.periodTrendData;
     final maxAmount = data.fold<double>(
       0,
       (maxValue, item) => max(maxValue, max(item.expense, item.income)),
     );
+
+    final title = store.reportType == ReportType.yearly
+        ? '年度消费趋势'
+        : (store.reportType == ReportType.monthly ? '月度消费趋势' : '本周消费趋势');
 
     return Card(
       child: Padding(
@@ -286,7 +310,7 @@ class _TrendCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('近一周消费趋势', style: theme.textTheme.titleLarge),
+            Text(title, style: theme.textTheme.titleLarge),
             const SizedBox(height: 18),
             SizedBox(
               height: 220,
@@ -313,15 +337,22 @@ class _TrendCard extends StatelessWidget {
                     bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
+                        interval: 1,
                         getTitlesWidget: (value, meta) {
                           final index = value.toInt();
                           if (index < 0 || index >= data.length) {
                             return const SizedBox.shrink();
                           }
+                          // Only show partial labels if too many (like monthly view)
+                          if (store.reportType == ReportType.monthly) {
+                            if (index % 5 != 0 && index != data.length - 1) {
+                              return const SizedBox.shrink();
+                            }
+                          }
                           return Padding(
                             padding: const EdgeInsets.only(top: 8),
                             child: Text(
-                              weekdayLabel(data[index].date.weekday),
+                              data[index].label,
                               style: theme.textTheme.bodySmall,
                             ),
                           );
@@ -330,9 +361,27 @@ class _TrendCard extends StatelessWidget {
                     ),
                   ),
                   borderData: FlBorderData(show: false),
+                  lineTouchData: LineTouchData(
+                    handleBuiltInTouches: true,
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipItems: (touchedSpots) {
+                        return touchedSpots.map((spot) {
+                          final label = data[spot.x.toInt()].label;
+                          final amount = formatChartTooltipAmount(spot.y);
+                          return LineTooltipItem(
+                            '$label\n$amount',
+                            const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold),
+                          );
+                        }).toList();
+                      },
+                    ),
+                  ),
                   lineBarsData: [
                     LineChartBarData(
-                      isCurved: true,
+                      isCurved: false,
+                      preventCurveOverShooting: true,
                       color: AppTheme.warning,
                       barWidth: 3,
                       dotData: const FlDotData(show: false),
@@ -347,7 +396,8 @@ class _TrendCard extends StatelessWidget {
                       ),
                     ),
                     LineChartBarData(
-                      isCurved: true,
+                      isCurved: false,
+                      preventCurveOverShooting: true,
                       color: AppTheme.mintDeep,
                       barWidth: 3,
                       dotData: const FlDotData(show: false),
@@ -387,10 +437,10 @@ class _InsightsSummaryCard extends StatelessWidget {
   String _formatComparison(double current, double previous, String label) {
     if (previous == 0 && current == 0) return '$label没有变化';
     if (previous == 0) return '$label增加 ${formatShortCurrency(current)}';
-    
+
     final diff = current - previous;
     if (diff == 0) return '$label与上期持平';
-    
+
     final action = diff > 0 ? '增加' : '减少';
     return '$label$action ${formatShortCurrency(diff.abs())}';
   }
@@ -400,7 +450,7 @@ class _InsightsSummaryCard extends StatelessWidget {
     final theme = Theme.of(context);
     final topCategory =
         store.categorySpendData.isEmpty ? null : store.categorySpendData.first;
-    
+
     final periodName = store.reportType == ReportType.yearly
         ? '年'
         : (store.reportType == ReportType.weekly ? '周' : '月');
@@ -416,9 +466,7 @@ class _InsightsSummaryCard extends StatelessWidget {
     final insights = [
       if (topCategory != null)
         '${topCategory.category.name} 是本$periodName最大支出，占比 ${(topCategory.shareOf(store.monthSpent) * 100).round()}%',
-      
       '与上$periodName相比，${_formatComparison(currentExp, prevExp, '支出')}，${_formatComparison(currentInc, prevInc, '收入')}。',
-      
       '本$periodName总结余为 ${formatShortCurrency(currentNet)}，相比上$periodName${currentNet >= prevNet ? '增加' : '减少'} ${formatShortCurrency((currentNet - prevNet).abs())}。'
     ];
 
@@ -468,11 +516,15 @@ class _MonthlyHistoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final data = store.recentMonthlySpend;
+    final data = store.historyBarData;
     final maxAmount = data.fold<double>(
       0,
       (maxValue, item) => max(maxValue, max(item.expense, item.income)),
     );
+
+    final title = store.reportType == ReportType.yearly
+        ? '每月消费'
+        : (store.reportType == ReportType.monthly ? '每周消费' : '每日消费');
 
     return Card(
       child: Padding(
@@ -480,7 +532,7 @@ class _MonthlyHistoryCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('近 6 个月', style: theme.textTheme.titleLarge),
+            Text(title, style: theme.textTheme.titleLarge),
             const SizedBox(height: 18),
             SizedBox(
               height: 220,
@@ -498,6 +550,20 @@ class _MonthlyHistoryCard extends StatelessWidget {
                     ),
                   ),
                   borderData: FlBorderData(show: false),
+                  barTouchData: BarTouchData(
+                    handleBuiltInTouches: true,
+                    touchTooltipData: BarTouchTooltipData(
+                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                        final label = data[group.x.toInt()].label;
+                        final amount = formatChartTooltipAmount(rod.toY);
+                        return BarTooltipItem(
+                          '$label\n$amount',
+                          const TextStyle(
+                              color: Colors.white, fontWeight: FontWeight.bold),
+                        );
+                      },
+                    ),
+                  ),
                   titlesData: FlTitlesData(
                     topTitles: const AxisTitles(
                         sideTitles: SideTitles(showTitles: false)),
@@ -513,10 +579,16 @@ class _MonthlyHistoryCard extends StatelessWidget {
                           if (index < 0 || index >= data.length) {
                             return const SizedBox.shrink();
                           }
+                          // Only show partial labels if too many (like yearly view)
+                          if (store.reportType == ReportType.yearly) {
+                            if (index % 2 != 0 && index != data.length - 1) {
+                              return const SizedBox.shrink();
+                            }
+                          }
                           return Padding(
                             padding: const EdgeInsets.only(top: 8),
                             child: Text(
-                              formatShortMonthLabel(data[index].month),
+                              data[index].label,
                               style: theme.textTheme.bodySmall,
                             ),
                           );
@@ -620,6 +692,129 @@ class _PeriodSwitchCompact extends StatelessWidget {
             icon: const Icon(Icons.chevron_right_rounded),
             visualDensity: VisualDensity.compact,
           ),
+        ],
+      ),
+    );
+  }
+}
+
+void _showCategoryRecords(BuildContext context, ExpenseCategory category) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => DraggableScrollableSheet(
+      initialChildSize: 0.6,
+      minChildSize: 0.4,
+      maxChildSize: 0.9,
+      expand: false,
+      builder: (_, scrollController) {
+        return _CategoryRecordsSheet(
+          category: category,
+          scrollController: scrollController,
+        );
+      },
+    ),
+  );
+}
+
+class _CategoryRecordsSheet extends StatelessWidget {
+  const _CategoryRecordsSheet({
+    required this.category,
+    required this.scrollController,
+  });
+
+  final ExpenseCategory category;
+  final ScrollController scrollController;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final store = PocketMeowScope.watch(context);
+
+    final records = store.currentMonthRecords
+        .where((r) => r.categoryId == category.id)
+        .toList();
+
+    final grouped = groupByDay(records, store);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Color(category.colorValue).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  iconForCategory(category.iconKey),
+                  size: 18,
+                  color: Color(category.colorValue),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text('${category.name} 交易记录', style: theme.textTheme.titleLarge),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (grouped.isEmpty)
+            const Expanded(
+              child: Center(child: Text('没有交易记录')),
+            )
+          else
+            Expanded(
+              child: ListView.builder(
+                controller: scrollController,
+                itemCount: grouped.length,
+                itemBuilder: (context, index) {
+                  final section = grouped[index];
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          formatDayLabel(section.date),
+                          style: theme.textTheme.titleSmall
+                              ?.copyWith(color: AppTheme.muted),
+                        ),
+                      ),
+                      ...section.items.map((item) => Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: RecordRow(
+                              item: item,
+                              onTap: () {
+                                Navigator.pop(context);
+                                showModalBottomSheet<void>(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  backgroundColor: Colors.transparent,
+                                  builder: (_) =>
+                                      AddExpenseSheet(expense: item.record),
+                                );
+                              },
+                            ),
+                          )),
+                    ],
+                  );
+                },
+              ),
+            ),
         ],
       ),
     );

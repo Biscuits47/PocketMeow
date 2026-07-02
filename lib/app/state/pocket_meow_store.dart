@@ -486,6 +486,67 @@ class PocketMeowStore extends ChangeNotifier {
     return categoryDataForType(RecordType.expense);
   }
 
+  List<TrendPointData> get periodTrendData {
+    final items = <TrendPointData>[];
+    final expenses = currentMonthExpenses;
+    final incomes = currentMonthIncomes;
+
+    if (_reportType == ReportType.weekly) {
+      final startOfWeek =
+          _selectedDate.subtract(Duration(days: _selectedDate.weekday - 1));
+      final weekdays = ['一', '二', '三', '四', '五', '六', '日'];
+      for (var i = 0; i < 7; i++) {
+        final day = startOfWeek.add(Duration(days: i));
+        double exp = 0;
+        double inc = 0;
+        for (final e in expenses) {
+          if (e.createdAt.day == day.day &&
+              e.createdAt.month == day.month &&
+              e.createdAt.year == day.year) {
+            exp += e.amount;
+          }
+        }
+        for (final e in incomes) {
+          if (e.createdAt.day == day.day &&
+              e.createdAt.month == day.month &&
+              e.createdAt.year == day.year) {
+            inc += e.amount;
+          }
+        }
+        items.add(TrendPointData(
+            label: '周${weekdays[i]}', expense: exp, income: inc));
+      }
+    } else if (_reportType == ReportType.monthly) {
+      final daysInMonth =
+          DateTime(_selectedDate.year, _selectedDate.month + 1, 0).day;
+      for (var i = 1; i <= daysInMonth; i++) {
+        double exp = 0;
+        double inc = 0;
+        for (final e in expenses) {
+          if (e.createdAt.day == i) exp += e.amount;
+        }
+        for (final e in incomes) {
+          if (e.createdAt.day == i) inc += e.amount;
+        }
+        items.add(TrendPointData(label: '$i日', expense: exp, income: inc));
+      }
+    } else if (_reportType == ReportType.yearly) {
+      for (var i = 1; i <= 12; i++) {
+        double exp = 0;
+        double inc = 0;
+        for (final e in expenses) {
+          if (e.createdAt.month == i) exp += e.amount;
+        }
+        for (final e in incomes) {
+          if (e.createdAt.month == i) inc += e.amount;
+        }
+        items.add(TrendPointData(label: '$i月', expense: exp, income: inc));
+      }
+    }
+
+    return items;
+  }
+
   List<DailySpendData> get recentDailySpend {
     final anchor = _recentTrendAnchor;
     final items = <DailySpendData>[];
@@ -516,35 +577,93 @@ class PocketMeowStore extends ChangeNotifier {
     return items;
   }
 
-  List<MonthSpendData> get recentMonthlySpend {
+  List<MonthSpendData> get historyBarData {
     final items = <MonthSpendData>[];
-    for (var i = 5; i >= 0; i--) {
-      final month = DateTime(_selectedDate.year, _selectedDate.month - i);
-      items.add(
-        MonthSpendData(
-          month: month,
-          expense: 0, // will compute below
-          income: 0,
-        ),
-      );
-    }
 
-    final oldestMonth = DateTime(_selectedDate.year, _selectedDate.month - 5);
-    final oldestDate = DateTime(oldestMonth.year, oldestMonth.month, 1);
-
-    for (final item in _sortedRecords) {
-      if (item.createdAt.isBefore(oldestDate)) {
-        break; // _sortedRecords is descending, so we can break early
+    if (_reportType == ReportType.weekly) {
+      // 周报: 该周每日的消费
+      final startOfWeek =
+          _selectedDate.subtract(Duration(days: _selectedDate.weekday - 1));
+      final weekdays = ['一', '二', '三', '四', '五', '六', '日'];
+      for (var i = 0; i < 7; i++) {
+        items.add(
+            MonthSpendData(label: '周${weekdays[i]}', expense: 0, income: 0));
       }
-      for (final monthData in items) {
-        if (item.createdAt.year == monthData.month.year &&
-            item.createdAt.month == monthData.month.month) {
-          if (item.type == RecordType.expense) {
-            monthData.expense += item.amount;
-          } else {
-            monthData.income += item.amount;
+      final endOfWeek = startOfWeek.add(const Duration(days: 6));
+      for (final item in _sortedRecords) {
+        if (item.createdAt.isBefore(startOfWeek)) break;
+        if (item.createdAt.isAfter(endOfWeek.add(const Duration(days: 1))))
+          continue;
+        final dayIndex = item.createdAt.weekday - 1;
+        if (item.type == RecordType.expense) {
+          items[dayIndex].expense += item.amount;
+        } else {
+          items[dayIndex].income += item.amount;
+        }
+      }
+    } else if (_reportType == ReportType.monthly) {
+      // 月报: 该月每周的消费
+      final firstDayOfMonth =
+          DateTime(_selectedDate.year, _selectedDate.month, 1);
+      final lastDayOfMonth =
+          DateTime(_selectedDate.year, _selectedDate.month + 1, 0);
+
+      var currentWeekStart = firstDayOfMonth;
+      int weekCount = 1;
+      final weekRanges = <DateTime, DateTime>{};
+
+      while (currentWeekStart.isBefore(lastDayOfMonth) ||
+          currentWeekStart.isAtSameMomentAs(lastDayOfMonth)) {
+        var endOfWeek =
+            currentWeekStart.add(Duration(days: 7 - currentWeekStart.weekday));
+        if (endOfWeek.isAfter(lastDayOfMonth)) endOfWeek = lastDayOfMonth;
+
+        items.add(MonthSpendData(label: '第$weekCount周', expense: 0, income: 0));
+        weekRanges[currentWeekStart] = endOfWeek;
+
+        currentWeekStart = endOfWeek.add(const Duration(days: 1));
+        weekCount++;
+      }
+
+      for (final item in _sortedRecords) {
+        if (item.createdAt.isBefore(firstDayOfMonth)) break;
+        if (item.createdAt.isAfter(lastDayOfMonth.add(const Duration(days: 1))))
+          continue;
+
+        int wIndex = 0;
+        for (final entry in weekRanges.entries) {
+          final start = entry.key;
+          final end = entry.value;
+          final itemDate = DateTime(
+              item.createdAt.year, item.createdAt.month, item.createdAt.day);
+          if ((itemDate.isAfter(start) || itemDate.isAtSameMomentAs(start)) &&
+              (itemDate.isBefore(end) || itemDate.isAtSameMomentAs(end))) {
+            if (item.type == RecordType.expense) {
+              items[wIndex].expense += item.amount;
+            } else {
+              items[wIndex].income += item.amount;
+            }
+            break;
           }
-          break;
+          wIndex++;
+        }
+      }
+    } else if (_reportType == ReportType.yearly) {
+      // 年报: 每月的消费
+      for (var i = 1; i <= 12; i++) {
+        items.add(MonthSpendData(label: '$i月', expense: 0, income: 0));
+      }
+      final firstDayOfYear = DateTime(_selectedDate.year, 1, 1);
+      final lastDayOfYear = DateTime(_selectedDate.year, 12, 31);
+      for (final item in _sortedRecords) {
+        if (item.createdAt.isBefore(firstDayOfYear)) break;
+        if (item.createdAt.isAfter(lastDayOfYear.add(const Duration(days: 1))))
+          continue;
+        final monthIndex = item.createdAt.month - 1;
+        if (item.type == RecordType.expense) {
+          items[monthIndex].expense += item.amount;
+        } else {
+          items[monthIndex].income += item.amount;
         }
       }
     }
@@ -782,6 +901,18 @@ class CategorySpendData {
   }
 }
 
+class TrendPointData {
+  TrendPointData({
+    required this.label,
+    required this.expense,
+    required this.income,
+  });
+
+  final String label;
+  final double expense;
+  final double income;
+}
+
 class DailySpendData {
   DailySpendData({
     required this.date,
@@ -798,12 +929,12 @@ class DailySpendData {
 
 class MonthSpendData {
   MonthSpendData({
-    required this.month,
+    required this.label,
     required this.expense,
     required this.income,
   });
 
-  final DateTime month;
+  final String label;
   double expense;
   double income;
 

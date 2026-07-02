@@ -231,7 +231,7 @@ class _SpendingDistributionCard extends StatelessWidget {
                                       ),
                                     ),
                                     Text(
-                                      formatShortCurrency(item.amount),
+                                      formatChartAmount(item.amount),
                                       style: theme.textTheme.titleMedium,
                                     ),
                                   ],
@@ -259,7 +259,7 @@ class _TrendCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final data = store.recentDailySpend;
+    final data = store.periodTrendData;
     final maxAmount = data.fold<double>(
       0,
       (maxValue, item) => max(
@@ -268,13 +268,17 @@ class _TrendCard extends StatelessWidget {
       ),
     );
 
+    final title = store.reportType == ReportType.yearly
+        ? '年度消费趋势'
+        : (store.reportType == ReportType.monthly ? '月度消费趋势' : '本周消费趋势');
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('近一周消费趋势', style: theme.textTheme.titleLarge),
+            Text(title, style: theme.textTheme.titleLarge),
             const SizedBox(height: 18),
             SizedBox(
               height: 220,
@@ -301,15 +305,22 @@ class _TrendCard extends StatelessWidget {
                     bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
+                        interval: 1,
                         getTitlesWidget: (value, meta) {
                           final index = value.toInt();
                           if (index < 0 || index >= data.length) {
                             return const SizedBox.shrink();
                           }
+                          // Only show partial labels if too many (like monthly view)
+                          if (store.reportType == ReportType.monthly) {
+                            if (index % 5 != 0 && index != data.length - 1) {
+                              return const SizedBox.shrink();
+                            }
+                          }
                           return Padding(
                             padding: const EdgeInsets.only(top: 8),
                             child: Text(
-                              weekdayLabel(data[index].date.weekday),
+                              data[index].label,
                               style: theme.textTheme.bodySmall,
                             ),
                           );
@@ -317,10 +328,27 @@ class _TrendCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  borderData: FlBorderData(show: false),
+                  lineTouchData: LineTouchData(
+                    handleBuiltInTouches: true,
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipItems: (touchedSpots) {
+                        return touchedSpots.map((spot) {
+                          final label = data[spot.x.toInt()].label;
+                          final amount = formatChartTooltipAmount(spot.y);
+                          return LineTooltipItem(
+                            '$label\n$amount',
+                            const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold),
+                          );
+                        }).toList();
+                      },
+                    ),
+                  ),
                   lineBarsData: [
                     LineChartBarData(
-                      isCurved: true,
+                      isCurved: false,
+                      preventCurveOverShooting: true,
                       color: AppTheme.warning,
                       barWidth: 3,
                       dotData: const FlDotData(show: false),
@@ -335,7 +363,8 @@ class _TrendCard extends StatelessWidget {
                       ),
                     ),
                     LineChartBarData(
-                      isCurved: true,
+                      isCurved: false,
+                      preventCurveOverShooting: true,
                       color: AppTheme.mintDeep,
                       barWidth: 3,
                       dotData: const FlDotData(show: false),
@@ -436,13 +465,10 @@ class _MonthlyHistoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final data = store.recentMonthlySpend;
+    final data = store.historyBarData;
     final maxAmount = data.fold<double>(
       0,
-      (maxValue, item) => max(
-        maxValue,
-        max(item.expense, item.income),
-      ),
+      (maxValue, item) => max(maxValue, max(item.expense, item.income)),
     );
 
     return Card(
@@ -469,6 +495,20 @@ class _MonthlyHistoryCard extends StatelessWidget {
                     ),
                   ),
                   borderData: FlBorderData(show: false),
+                  barTouchData: BarTouchData(
+                    handleBuiltInTouches: true,
+                    touchTooltipData: BarTouchTooltipData(
+                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                        final label = data[group.x.toInt()].label;
+                        final amount = formatChartTooltipAmount(rod.toY);
+                        return BarTooltipItem(
+                          '$label\n$amount',
+                          const TextStyle(
+                              color: Colors.white, fontWeight: FontWeight.bold),
+                        );
+                      },
+                    ),
+                  ),
                   titlesData: FlTitlesData(
                     topTitles: const AxisTitles(
                         sideTitles: SideTitles(showTitles: false)),
@@ -484,10 +524,16 @@ class _MonthlyHistoryCard extends StatelessWidget {
                           if (index < 0 || index >= data.length) {
                             return const SizedBox.shrink();
                           }
+                          // Only show partial labels if too many (like yearly view)
+                          if (store.reportType == ReportType.yearly) {
+                            if (index % 2 != 0 && index != data.length - 1) {
+                              return const SizedBox.shrink();
+                            }
+                          }
                           return Padding(
                             padding: const EdgeInsets.only(top: 8),
                             child: Text(
-                              formatShortMonthLabel(data[index].month),
+                              data[index].label,
                               style: theme.textTheme.bodySmall,
                             ),
                           );

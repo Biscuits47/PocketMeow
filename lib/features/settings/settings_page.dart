@@ -44,42 +44,283 @@ class SettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final store = PocketMeowScope.watch(context);
 
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
         children: [
-          Text('设置', style: theme.textTheme.headlineSmall),
-          const SizedBox(height: 20),
-          _CategoryManagerCard(categories: store.categories),
-          const SizedBox(height: 16),
           _SettingTile(
-            icon: Icons.upload_file_rounded,
-            title: '导入账单',
-            subtitle: '自动识别并导入微信或支付宝账单',
-            onTap: () => _importBill(context, store),
+            icon: Icons.category_rounded,
+            title: '分类管理',
+            subtitle: '新增或删除自定义记账分类',
+            onTap: () => _openCategoryManager(context),
           ),
           _SettingTile(
-            icon: Icons.save_alt_rounded,
-            title: '导出数据',
-            subtitle: '将软件的数据打包成文件保存',
-            onTap: () => _exportData(context, store),
+            icon: Icons.sync_alt_rounded,
+            title: '导入导出数据',
+            subtitle: '备份或恢复本地记账数据',
+            onTap: () => _openImportExportMenu(context, store),
           ),
           _SettingTile(
-            icon: Icons.restore_page_rounded,
-            title: '导入数据',
-            subtitle: '读取数据文件并恢复',
-            onTap: () => _importData(context, store),
-          ),
-          const _AppVersionTile(),
-          const _SettingTile(
             icon: Icons.notifications_outlined,
             title: '提醒设置',
             subtitle: '预算预警与每日记账提醒',
+            onTap: () => _openReminderSettings(context),
+          ),
+          const _AppVersionTile(),
+        ],
+      ),
+    );
+  }
+}
+
+void _openCategoryManager(BuildContext context) {
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => const _CategoryManagerPage(),
+    ),
+  );
+}
+
+class _CategoryManagerPage extends StatelessWidget {
+  const _CategoryManagerPage();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final store = PocketMeowScope.watch(context);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('分类管理')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.tonal(
+              onPressed: () => showAddCategoryDialog(context, store),
+              child: const Text('新增分类'),
+            ),
+          ),
+          const SizedBox(height: 14),
+          ...store.categories.map(
+            (category) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: Color(category.colorValue)
+                              .withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(
+                          iconForCategory(category.iconKey),
+                          size: 18,
+                          color: Color(category.colorValue),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '${category.name} · ${category.type.label}',
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ),
+                      if (!category.isSystem)
+                        IconButton(
+                          onPressed: () => _confirmDeleteCategory(
+                            context,
+                            store,
+                            category,
+                          ),
+                          icon: const Icon(Icons.delete_outline_rounded),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+void _openImportExportMenu(BuildContext context, PocketMeowStore store) {
+  showModalBottomSheet<void>(
+    context: context,
+    builder: (_) {
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                '数据管理',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.upload_file_rounded),
+              title: const Text('导入微信/支付宝账单'),
+              subtitle: const Text('支持解析 CSV 和 Excel 格式'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _importBill(context, store);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.save_alt_rounded),
+              title: const Text('导出完整数据 (备份)'),
+              subtitle: const Text('保存为 JSON 格式的备份文件'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _exportData(context, store);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.restore_page_rounded),
+              title: const Text('导入完整数据 (恢复)'),
+              subtitle: const Text('读取之前导出的备份文件'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _importData(context, store);
+              },
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+void _openReminderSettings(BuildContext context) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => const _ReminderSettingsSheet(),
+  );
+}
+
+class _ReminderSettingsSheet extends StatefulWidget {
+  const _ReminderSettingsSheet();
+
+  @override
+  State<_ReminderSettingsSheet> createState() => _ReminderSettingsSheetState();
+}
+
+class _ReminderSettingsSheetState extends State<_ReminderSettingsSheet> {
+  TimeOfDay _time = const TimeOfDay(hour: 20, minute: 0);
+  double _warningPercent = 85.0;
+  bool _enableReminder = false;
+  bool _enableWarning = true;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('提醒设置', style: theme.textTheme.titleLarge),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('每日记账提醒'),
+              subtitle: const Text('在指定时间提醒你记录当天的花销'),
+              value: _enableReminder,
+              onChanged: (value) {
+                setState(() => _enableReminder = value);
+                if (value) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('已开启每日记账提醒')),
+                  );
+                }
+              },
+            ),
+            if (_enableReminder) ...[
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('提醒时间'),
+                trailing: Text(_time.format(context),
+                    style: theme.textTheme.titleMedium),
+                onTap: () async {
+                  final time = await showTimePicker(
+                    context: context,
+                    initialTime: _time,
+                  );
+                  if (time != null) {
+                    setState(() => _time = time);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                            content: Text('提醒时间已修改为 ${_time.format(context)}')),
+                      );
+                    }
+                  }
+                },
+              ),
+            ],
+            const Divider(height: 32),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('预算超支预警'),
+              subtitle: const Text('当预算消耗过快且剩余天数较多时进行提醒'),
+              value: _enableWarning,
+              onChanged: (value) => setState(() => _enableWarning = value),
+            ),
+            if (_enableWarning) ...[
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Text('预警阈值', style: theme.textTheme.bodyMedium),
+                  const Spacer(),
+                  Text('${_warningPercent.toInt()}%',
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(color: AppTheme.warning)),
+                ],
+              ),
+              Slider(
+                value: _warningPercent,
+                min: 50,
+                max: 100,
+                divisions: 10,
+                activeColor: AppTheme.warning,
+                label: '${_warningPercent.toInt()}%',
+                onChanged: (value) => setState(() => _warningPercent = value),
+              ),
+            ],
+            const SizedBox(height: 20),
+          ],
+        ),
       ),
     );
   }
@@ -151,79 +392,6 @@ class _AppVersionTile extends StatelessWidget {
           onTap: () => _checkForUpdates(context),
         );
       },
-    );
-  }
-}
-
-class _CategoryManagerCard extends StatelessWidget {
-  const _CategoryManagerCard({required this.categories});
-
-  final List<ExpenseCategory> categories;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final store = PocketMeowScope.read(context);
-
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: Theme(
-        data: theme.copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          title: Text('分类管理', style: theme.textTheme.titleMedium),
-          childrenPadding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-          children: [
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton.tonal(
-                onPressed: () => showAddCategoryDialog(context, store),
-                child: const Text('新增分类'),
-              ),
-            ),
-            const SizedBox(height: 14),
-            ...categories.map(
-              (category) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color:
-                            Color(category.colorValue).withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      alignment: Alignment.center,
-                      child: Icon(
-                        iconForCategory(category.iconKey),
-                        size: 18,
-                        color: Color(category.colorValue),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        '${category.name} · ${category.type.label}',
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    ),
-                    if (!category.isSystem)
-                      IconButton(
-                        onPressed: () => _confirmDeleteCategory(
-                          context,
-                          store,
-                          category,
-                        ),
-                        icon: const Icon(Icons.delete_outline_rounded),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

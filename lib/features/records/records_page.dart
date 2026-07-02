@@ -14,7 +14,7 @@ class RecordsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final store = PocketMeowScope.watch(context);
-    final grouped = _groupByDay(store.records, store);
+    final grouped = groupByDay(store.records, store);
 
     final now = DateTime.now();
     final todayExpense = store.records
@@ -261,7 +261,7 @@ class RecordsPage extends StatelessWidget {
 class _DaySection extends StatelessWidget {
   const _DaySection({required this.section});
 
-  final _GroupedRecords section;
+  final GroupedRecords section;
 
   @override
   Widget build(BuildContext context) {
@@ -323,7 +323,7 @@ class _DaySection extends StatelessWidget {
                     child:
                         const Icon(Icons.delete_outline, color: Colors.white),
                   ),
-                  child: _RecordRow(
+                  child: RecordRow(
                     item: item,
                     onTap: () {
                       showModalBottomSheet<void>(
@@ -344,8 +344,8 @@ class _DaySection extends StatelessWidget {
   }
 }
 
-class _RecordItem {
-  const _RecordItem({
+class RecordItem {
+  const RecordItem({
     required this.id,
     required this.title,
     required this.category,
@@ -366,13 +366,14 @@ class _RecordItem {
   final RecordType type;
 }
 
-class _RecordRow extends StatelessWidget {
-  const _RecordRow({
+class RecordRow extends StatelessWidget {
+  const RecordRow({
+    super.key,
     required this.item,
     required this.onTap,
   });
 
-  final _RecordItem item;
+  final RecordItem item;
   final VoidCallback onTap;
 
   @override
@@ -453,8 +454,8 @@ class _RecordRow extends StatelessWidget {
   }
 }
 
-class _GroupedRecords {
-  const _GroupedRecords({
+class GroupedRecords {
+  const GroupedRecords({
     required this.date,
     required this.items,
     required this.expense,
@@ -462,12 +463,12 @@ class _GroupedRecords {
   });
 
   final DateTime date;
-  final List<_RecordItem> items;
+  final List<RecordItem> items;
   final double expense;
   final double income;
 }
 
-List<_GroupedRecords> _groupByDay(
+List<GroupedRecords> groupByDay(
   List<ExpenseRecord> records,
   PocketMeowStore store,
 ) {
@@ -484,7 +485,7 @@ List<_GroupedRecords> _groupByDay(
     final date = items.first.createdAt;
     final mapped = items.map((record) {
       final category = store.categoryById(record.categoryId);
-      return _RecordItem(
+      return RecordItem(
         id: record.id,
         title: category?.name ?? '未分类',
         category: category?.name ?? '未分类',
@@ -502,7 +503,7 @@ List<_GroupedRecords> _groupByDay(
     final expense = items
         .where((item) => item.type == RecordType.expense)
         .fold(0.0, (sum, item) => sum + item.amount);
-    return _GroupedRecords(
+    return GroupedRecords(
       date: date,
       items: mapped,
       expense: expense,

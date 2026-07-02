@@ -73,7 +73,10 @@ class _AppShellState extends State<AppShell> {
     return Scaffold(
       extendBody: true,
       body: store.isReady
-          ? _pages[_currentIndex]
+          ? IndexedStack(
+              index: _currentIndex,
+              children: _pages,
+            )
           : const Center(
               child: CircularProgressIndicator(
                 strokeCap: StrokeCap.round,

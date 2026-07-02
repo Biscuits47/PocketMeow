@@ -88,10 +88,10 @@ class AppUpdateService {
         }
         downloadUrl ??= _readString(json, ['apk_url', 'download_url']);
 
-        // 使用国内镜像加速下载 GitHub Release
+        // 测试可用的加速节点
         if (downloadUrl != null &&
             downloadUrl.startsWith('https://github.com/')) {
-          downloadUrl = 'https://mirror.ghproxy.com/$downloadUrl';
+          downloadUrl = await _getFastestDownloadUrl(downloadUrl);
         }
 
         final releaseNotes = _readString(
@@ -203,5 +203,58 @@ class AppUpdateService {
       }
     }
     return null;
+  }
+
+  Future<String> _getFastestDownloadUrl(String originalUrl) async {
+    final proxies = [
+      'https://mirror.ghproxy.com/',
+      'https://ghproxy.net/',
+      'https://kkgithub.com/',
+      'https://gh-proxy.com/',
+    ];
+
+    // 如果原始链接本来就不是 github.com，直接返回
+    if (!originalUrl.startsWith('https://github.com/')) {
+      return originalUrl;
+    }
+
+    final futures = proxies.map((proxy) async {
+      String testUrl;
+      if (proxy == 'https://kkgithub.com/') {
+        testUrl = originalUrl.replaceFirst('https://github.com/', proxy);
+      } else {
+        testUrl = '$proxy$originalUrl';
+      }
+
+      try {
+        final stopwatch = Stopwatch()..start();
+        // 只请求 headers，不下载内容，超时设置为 3 秒
+        final response = await http
+            .head(Uri.parse(testUrl))
+            .timeout(const Duration(seconds: 3));
+        stopwatch.stop();
+
+        // 如果响应状态码是 200, 301, 302, 307，说明链接可用
+        if (response.statusCode >= 200 && response.statusCode < 400) {
+          return {'url': testUrl, 'time': stopwatch.elapsedMilliseconds};
+        }
+      } catch (e) {
+        // 请求失败，忽略
+      }
+      return null;
+    });
+
+    final results = await Future.wait(futures);
+    final validResults = results.whereType<Map<String, dynamic>>().toList();
+
+    if (validResults.isNotEmpty) {
+      // 按照响应时间排序，选最快的
+      validResults
+          .sort((a, b) => (a['time'] as int).compareTo(b['time'] as int));
+      return validResults.first['url'] as String;
+    }
+
+    // 如果所有的代理节点都不通，直接返回原始直连链接
+    return originalUrl;
   }
 }

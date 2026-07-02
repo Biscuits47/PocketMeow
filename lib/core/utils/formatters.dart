@@ -161,6 +161,47 @@ String formatShortCurrency(double value) {
   return '$sign¥${absValue.toStringAsFixed(2)}';
 }
 
+String formatChartAmount(double value) {
+  final sign = value < 0 ? '-' : '';
+  final absValue = value.abs();
+
+  if (absValue >= 10000) {
+    final v = absValue / 10000;
+    // Format to remove trailing zeros, but allow up to 2 decimal places if needed
+    final str = v
+        .toStringAsFixed(2)
+        .replaceAll(RegExp(r'0*$'), '')
+        .replaceAll(RegExp(r'\.$'), '');
+    return '$sign¥$str万';
+  }
+
+  // Format with commas for thousands and handle floating point precision
+  String str = absValue.toStringAsFixed(3);
+  str = str.replaceAll(RegExp(r'0*$'), '').replaceAll(RegExp(r'\.$'), '');
+
+  final parts = str.split('.');
+  final String formattedInt = parts[0].replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},');
+
+  if (parts.length > 1) {
+    return '$sign¥$formattedInt.${parts[1]}';
+  }
+  return '$sign¥$formattedInt';
+}
+
+String formatChartTooltipAmount(double value) {
+  final absValue = value.abs();
+  if (absValue == absValue.roundToDouble()) {
+    return '¥${value.toInt()}';
+  }
+  // Use toStringAsFixed to prevent floating point precision issues (like 85.25600000000001)
+  // We keep up to 3 decimal places as requested
+  String str = absValue.toStringAsFixed(3);
+  // Remove trailing zeros and possible trailing dot
+  str = str.replaceAll(RegExp(r'0*$'), '').replaceAll(RegExp(r'\.$'), '');
+  return '¥$str';
+}
+
 String formatPeriodLabel(DateTime date, ReportType type) {
   if (type == ReportType.yearly) {
     return '${date.year} 年';

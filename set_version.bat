@@ -33,8 +33,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "if (-not ($content -match '(?m)^version:\s*.+$')) { throw 'version field not found'; }" ^
   "$cleanVersion = '%NEW_VERSION%'.Trim();" ^
   "$parts = $cleanVersion.Split('.');" ^
-  "$versionCode = [int]$parts[0] * 1000000 + [int]$parts[1] * 1000 + [int]$parts[2];" ^
-  "$fullVersion = $cleanVersion + '+' + $versionCode;" ^
+  "$versionCode = [int]$parts[0] * 10 + [int]$parts[2];" ^
+  "$fullVersion = $cleanVersion + '+' + $versionCode.ToString('D2');" ^
   "$updated = [regex]::Replace($content, '(?m)^version:\s*.+$', ('version: ' + $fullVersion));" ^
   "[System.IO.File]::WriteAllText((Resolve-Path $path), $updated, (New-Object System.Text.UTF8Encoding($false)));"
 
