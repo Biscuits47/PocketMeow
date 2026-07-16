@@ -206,6 +206,13 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  flutter_accessibility_service:
+    dependency: "direct main"
+    description:
+      path: "vendor/flutter_accessibility_service"
+      relative: true
+    source: path
+    version: "1.2.0"
   flutter_launcher_icons:
     dependency: "direct dev"
     description:
@@ -397,6 +404,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "0.19.2"
+  notification_listener_service:
+    dependency: "direct main"
+    description:
+      name: notification_listener_service
+      sha256: "79cdf3e8b1eedc66aa0f3fce46f2f7bba5752f33d6566396bee7598882ac931d"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "1.0.0"
   objective_c:
     dependency: transitive
     description:

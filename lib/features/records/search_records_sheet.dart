@@ -67,194 +67,198 @@ class _SearchRecordsSheetState extends State<SearchRecordsSheet> {
       availableCategories = store.categoriesForType(_selectedType!);
     }
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Row(
-            children: [
-              Text('搜索与筛选', style: theme.textTheme.titleLarge),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          // Search Field
-          TextField(
-            controller: _searchController,
-            onChanged: (_) => setState(() {}),
-            decoration: InputDecoration(
-              hintText: '搜索备注、分类、金额',
-              prefixIcon: const Icon(Icons.search, color: AppTheme.muted),
-              filled: true,
-              fillColor: const Color(0xFFF1F4F6),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide.none,
-              ),
-              contentPadding: const EdgeInsets.symmetric(vertical: 12),
-              suffixIcon: query.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear, color: AppTheme.muted),
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() {});
-                      },
-                    )
-                  : null,
-            ),
-          ),
-          const SizedBox(height: 16),
-          // Filters
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      behavior: HitTestBehavior.translucent,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
               children: [
-                // Type Filter
-                _FilterChip(
-                  label: '全部类型',
-                  isSelected: _selectedType == null,
-                  onTap: () {
-                    setState(() {
-                      _selectedType = null;
-                      _selectedCategoryId = null; // Reset category filter
-                    });
-                  },
-                ),
-                const SizedBox(width: 8),
-                _FilterChip(
-                  label: '支出',
-                  isSelected: _selectedType == RecordType.expense,
-                  onTap: () {
-                    setState(() {
-                      _selectedType = RecordType.expense;
-                      if (_selectedCategoryId != null &&
-                          store.categoryById(_selectedCategoryId!)?.type !=
-                              RecordType.expense) {
-                        _selectedCategoryId = null;
-                      }
-                    });
-                  },
-                ),
-                const SizedBox(width: 8),
-                _FilterChip(
-                  label: '收入',
-                  isSelected: _selectedType == RecordType.income,
-                  onTap: () {
-                    setState(() {
-                      _selectedType = RecordType.income;
-                      if (_selectedCategoryId != null &&
-                          store.categoryById(_selectedCategoryId!)?.type !=
-                              RecordType.income) {
-                        _selectedCategoryId = null;
-                      }
-                    });
-                  },
-                ),
-                const SizedBox(width: 16),
-                Container(
-                  width: 1,
-                  height: 24,
-                  color: const Color(0xFFE6EBEE),
-                ),
-                const SizedBox(width: 16),
-                // Category Filter Dropdown/Button
-                PopupMenuButton<String?>(
-                  initialValue: _selectedCategoryId,
-                  onSelected: (value) {
-                    setState(() {
-                      _selectedCategoryId = value;
-                    });
-                  },
-                  itemBuilder: (context) {
-                    return [
-                      const PopupMenuItem(
-                        value: null,
-                        child: Text('全部分类'),
-                      ),
-                      ...availableCategories.map((c) => PopupMenuItem(
-                            value: c.id,
-                            child: Row(
-                              children: [
-                                Icon(iconForCategory(c.iconKey),
-                                    size: 18, color: Color(c.colorValue)),
-                                const SizedBox(width: 8),
-                                Text(c.name),
-                              ],
-                            ),
-                          )),
-                    ];
-                  },
-                  child: _FilterChip(
-                    label: _selectedCategoryId == null
-                        ? '全部分类'
-                        : store.categoryById(_selectedCategoryId!)?.name ??
-                            '未知分类',
-                    isSelected: _selectedCategoryId != null,
-                    onTap: null, // Let PopupMenuButton handle tap
-                    icon: Icons.keyboard_arrow_down_rounded,
-                  ),
+                Text('搜索与筛选', style: theme.textTheme.titleLarge),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 16),
-          // Results
-          Expanded(
-            child: grouped.isEmpty
-                ? Center(
-                    child: Text(
-                      '没有找到匹配的记录',
-                      style: theme.textTheme.bodyMedium
-                          ?.copyWith(color: AppTheme.muted),
-                    ),
-                  )
-                : ListView.builder(
-                    controller: widget.scrollController,
-                    itemCount: grouped.length,
-                    itemBuilder: (context, index) {
-                      final section = grouped[index];
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            child: Text(
-                              formatDayLabel(section.date),
-                              style: theme.textTheme.titleSmall
-                                  ?.copyWith(color: AppTheme.muted),
-                            ),
-                          ),
-                          ...section.items.map((item) => Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: RecordRow(
-                                  item: item,
-                                  onTap: () {
-                                    showModalBottomSheet<void>(
-                                      context: context,
-                                      isScrollControlled: true,
-                                      backgroundColor: Colors.transparent,
-                                      builder: (_) =>
-                                          AddExpenseSheet(expense: item.record),
-                                    );
-                                  },
-                                ),
-                              )),
-                        ],
-                      );
+            const SizedBox(height: 16),
+            // Search Field
+            TextField(
+              controller: _searchController,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                hintText: '搜索备注、分类、金额',
+                prefixIcon: const Icon(Icons.search, color: AppTheme.muted),
+                filled: true,
+                fillColor: const Color(0xFFF1F4F6),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                suffixIcon: query.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, color: AppTheme.muted),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {});
+                        },
+                      )
+                    : null,
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Filters
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  // Type Filter
+                  _FilterChip(
+                    label: '全部类型',
+                    isSelected: _selectedType == null,
+                    onTap: () {
+                      setState(() {
+                        _selectedType = null;
+                        _selectedCategoryId = null; // Reset category filter
+                      });
                     },
                   ),
-          ),
-        ],
+                  const SizedBox(width: 8),
+                  _FilterChip(
+                    label: '支出',
+                    isSelected: _selectedType == RecordType.expense,
+                    onTap: () {
+                      setState(() {
+                        _selectedType = RecordType.expense;
+                        if (_selectedCategoryId != null &&
+                            store.categoryById(_selectedCategoryId!)?.type !=
+                                RecordType.expense) {
+                          _selectedCategoryId = null;
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  _FilterChip(
+                    label: '收入',
+                    isSelected: _selectedType == RecordType.income,
+                    onTap: () {
+                      setState(() {
+                        _selectedType = RecordType.income;
+                        if (_selectedCategoryId != null &&
+                            store.categoryById(_selectedCategoryId!)?.type !=
+                                RecordType.income) {
+                          _selectedCategoryId = null;
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(width: 16),
+                  Container(
+                    width: 1,
+                    height: 24,
+                    color: const Color(0xFFE6EBEE),
+                  ),
+                  const SizedBox(width: 16),
+                  // Category Filter Dropdown/Button
+                  PopupMenuButton<String?>(
+                    initialValue: _selectedCategoryId,
+                    onSelected: (value) {
+                      setState(() {
+                        _selectedCategoryId = value;
+                      });
+                    },
+                    itemBuilder: (context) {
+                      return [
+                        const PopupMenuItem(
+                          value: null,
+                          child: Text('全部分类'),
+                        ),
+                        ...availableCategories.map((c) => PopupMenuItem(
+                              value: c.id,
+                              child: Row(
+                                children: [
+                                  Icon(iconForCategory(c.iconKey),
+                                      size: 18, color: Color(c.colorValue)),
+                                  const SizedBox(width: 8),
+                                  Text(c.name),
+                                ],
+                              ),
+                            )),
+                      ];
+                    },
+                    child: _FilterChip(
+                      label: _selectedCategoryId == null
+                          ? '全部分类'
+                          : store.categoryById(_selectedCategoryId!)?.name ??
+                              '未知分类',
+                      isSelected: _selectedCategoryId != null,
+                      onTap: null, // Let PopupMenuButton handle tap
+                      icon: Icons.keyboard_arrow_down_rounded,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Results
+            Expanded(
+              child: grouped.isEmpty
+                  ? Center(
+                      child: Text(
+                        '没有找到匹配的记录',
+                        style: theme.textTheme.bodyMedium
+                            ?.copyWith(color: AppTheme.muted),
+                      ),
+                    )
+                  : ListView.builder(
+                      controller: widget.scrollController,
+                      itemCount: grouped.length,
+                      itemBuilder: (context, index) {
+                        final section = grouped[index];
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              child: Text(
+                                formatDayLabel(section.date),
+                                style: theme.textTheme.titleSmall
+                                    ?.copyWith(color: AppTheme.muted),
+                              ),
+                            ),
+                            ...section.items.map((item) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: RecordRow(
+                                    item: item,
+                                    onTap: () {
+                                      showModalBottomSheet<void>(
+                                        context: context,
+                                        isScrollControlled: true,
+                                        backgroundColor: Colors.transparent,
+                                        builder: (_) => AddExpenseSheet(
+                                            expense: item.record),
+                                      );
+                                    },
+                                  ),
+                                )),
+                          ],
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }

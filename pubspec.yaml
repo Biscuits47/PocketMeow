@@ -1,7 +1,7 @@
 name: pocket_meow
 description: PocketMeow is a premium minimal expense tracker.
 publish_to: "none"
-version: 1.0.7+1000010
+version: 1.1.1+1001003
 
 environment:
   sdk: ^3.5.0
@@ -35,6 +35,12 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   intl: ^0.20.2
+  flutter_accessibility_service: ^1.2.0
+  notification_listener_service: ^1.0.0
+
+dependency_overrides:
+  flutter_accessibility_service:
+    path: vendor/flutter_accessibility_service
 
 dev_dependencies:
   flutter_test:

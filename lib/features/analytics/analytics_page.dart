@@ -414,7 +414,7 @@ class _InsightsSummaryCard extends StatelessWidget {
       if (topCategory != null)
         '${topCategory.category.name.trim()}是本月最大支出，占总支出的 ${(topCategory.shareOf(store.monthSpent) * 100).round()}%',
       '最近一周 ${weekdayLabel(topDay.date.weekday)} 的支出最高，花了 ${formatShortCurrency(topDay.expense)}',
-      '按当前节奏，本月预计${store.projectedBalance >= 0 ? '结余' : '超支'} ${formatShortCurrency(store.projectedBalance.abs())}',
+      '按当前节奏，本期预计${store.projectedBalance >= 0 ? '结余' : '超支'} ${formatShortCurrency(store.projectedBalance.abs())}',
     ];
 
     return Card(

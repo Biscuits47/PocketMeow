@@ -36,15 +36,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$cleanVersion = '%NEW_VERSION%'.Trim();" ^
   "$parts = $cleanVersion.Split('.');" ^
   "$baseVersionCode = [int]$parts[0] * 1000000 + [int]$parts[1] * 1000 + [int]$parts[2];" ^
-  "if ($cleanVersion -eq $currentVersionName) {" ^
-  "  if ($currentVersionCode -ge $baseVersionCode) {" ^
-  "    $versionCode = $currentVersionCode + 1;" ^
-  "  } else {" ^
-  "    $versionCode = $baseVersionCode;" ^
-  "  }" ^
-  "} else {" ^
-  "  $versionCode = $baseVersionCode;" ^
-  "}" ^
+  "$versionCode = [Math]::Max($baseVersionCode, $currentVersionCode + 1);" ^
   "$fullVersion = $cleanVersion + '+' + $versionCode.ToString();" ^
   "$updated = [regex]::Replace($content, '(?m)^version:\s*.+$', ('version: ' + $fullVersion));" ^
   "[System.IO.File]::WriteAllText((Resolve-Path $path), $updated, (New-Object System.Text.UTF8Encoding($false)));"
@@ -55,8 +47,10 @@ if errorlevel 1 (
   exit /b 1
 )
 
+for /f "tokens=2" %%v in ('findstr "^version: " pubspec.yaml') do set "FULL_VERSION=%%v"
+
 echo.
-echo Updated version to %TARGET_VERSION%
+echo Updated version to %FULL_VERSION%
 echo File: %PROJECT_DIR%pubspec.yaml
 echo.
 echo Example:

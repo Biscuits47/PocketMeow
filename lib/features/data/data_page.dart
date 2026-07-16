@@ -211,7 +211,7 @@ class _SpendingDistributionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final items = store.categoryDataForType(type).toList();
+    final items = store.categoryDataForType(type);
     final total =
         type == RecordType.expense ? store.monthSpent : store.monthIncome;
     final periodName = store.reportType == ReportType.yearly
@@ -677,14 +677,16 @@ class _InsightsSummaryCard extends StatelessWidget {
 
     final currentExp = store.monthSpent;
     final currentInc = store.monthIncome;
-    final currentBalance = currentInc - currentExp;
+    final useBudgetBalance = store.reportType == ReportType.monthly;
+    final currentBalance =
+        useBudgetBalance ? store.remainingBudget : currentInc - currentExp;
 
     final prevExp = store.previousPeriodExpense;
     final prevInc = store.previousPeriodIncome;
 
     final balanceText = currentBalance >= 0
-        ? '结余 ${formatShortCurrency(currentBalance)}'
-        : '超支 ${formatShortCurrency(currentBalance.abs())}';
+        ? '${useBudgetBalance ? '预算结余' : '结余'} ${formatShortCurrency(currentBalance)}'
+        : '${useBudgetBalance ? '预算超支' : '超支'} ${formatShortCurrency(currentBalance.abs())}';
 
     final salaryAndBonus = store.currentMonthIncomes.where((r) {
       final cat = store.categoryById(r.categoryId);
@@ -695,7 +697,14 @@ class _InsightsSummaryCard extends StatelessWidget {
     }).fold(0.0, (sum, r) => sum + r.amount);
 
     String thirdInsight;
-    if (currentInc == 0) {
+    if (useBudgetBalance) {
+      if (store.totalBudget <= 0) {
+        thirdInsight = '本$periodName共支出 ${formatShortCurrency(currentExp)}。';
+      } else {
+        thirdInsight =
+            '本$periodName$balanceText，预算已用 ${(store.budgetUsage * 100).round()}%。';
+      }
+    } else if (currentInc == 0) {
       thirdInsight = '本$periodName共支出 ${formatShortCurrency(currentExp)}。';
     } else {
       thirdInsight =
@@ -990,7 +999,8 @@ class _CategoryRecordsSheetState extends State<_CategoryRecordsSheet> {
 
                 listContent = ListView.builder(
                   controller: scrollController,
-                  padding: const EdgeInsets.all(16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
                   itemCount: sortedRecords.length,
                   itemBuilder: (context, index) {
                     final record = sortedRecords[index];
@@ -1015,6 +1025,8 @@ class _CategoryRecordsSheetState extends State<_CategoryRecordsSheet> {
                       ),
                       child: RecordRow(
                         item: item,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 16),
                         onTap: () {
                           showModalBottomSheet<void>(
                             context: context,
@@ -1045,7 +1057,8 @@ class _CategoryRecordsSheetState extends State<_CategoryRecordsSheet> {
 
                 listContent = ListView.builder(
                   controller: scrollController,
-                  padding: const EdgeInsets.all(16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
                   itemCount: sortedKeys.length,
                   itemBuilder: (context, index) {
                     final date = sortedKeys[index];
@@ -1085,6 +1098,8 @@ class _CategoryRecordsSheetState extends State<_CategoryRecordsSheet> {
                             ),
                             child: RecordRow(
                               item: item,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 16),
                               onTap: () {
                                 showModalBottomSheet<void>(
                                   context: context,
@@ -1096,7 +1111,7 @@ class _CategoryRecordsSheetState extends State<_CategoryRecordsSheet> {
                               },
                             ),
                           );
-                        }).toList(),
+                        }),
                       ],
                     );
                   },

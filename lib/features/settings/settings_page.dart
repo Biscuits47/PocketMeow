@@ -3,6 +3,8 @@ import 'dart:math';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
+import 'package:notification_listener_service/notification_listener_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -16,6 +18,7 @@ import '../../core/services/app_update_service.dart';
 import '../../core/services/bill_import_service.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/models/app_models.dart';
+import '../budget/budget_manager_sheet.dart';
 
 final _appUpdateService = AppUpdateService();
 final _billImportService = BillImportService();
@@ -56,6 +59,12 @@ class SettingsPage extends StatelessWidget {
             title: '分类管理',
             subtitle: '新增或删除自定义记账分类',
             onTap: () => _openCategoryManager(context),
+          ),
+          _SettingTile(
+            icon: Icons.auto_awesome_rounded,
+            title: '自动记账',
+            subtitle: '通过监听通知或无障碍服务自动记录微信/支付宝账单',
+            onTap: () => _openAutoBookkeepingSettings(context, store),
           ),
           _SettingTile(
             icon: Icons.sync_alt_rounded,
@@ -203,6 +212,119 @@ void _openImportExportMenu(BuildContext context, PocketMeowStore store) {
       );
     },
   );
+}
+
+void _openAutoBookkeepingSettings(BuildContext context, PocketMeowStore store) {
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => _AutoBookkeepingPage(store: store),
+    ),
+  );
+}
+
+class _AutoBookkeepingPage extends StatefulWidget {
+  const _AutoBookkeepingPage({required this.store});
+  final PocketMeowStore store;
+
+  @override
+  State<_AutoBookkeepingPage> createState() => _AutoBookkeepingPageState();
+}
+
+class _AutoBookkeepingPageState extends State<_AutoBookkeepingPage> {
+  bool _notifGranted = false;
+  bool _accGranted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPermissions();
+  }
+
+  Future<void> _checkPermissions() async {
+    final notif = await NotificationListenerService.isPermissionGranted();
+    final acc =
+        await FlutterAccessibilityService.isAccessibilityPermissionEnabled();
+    if (mounted) {
+      setState(() {
+        _notifGranted = notif;
+        _accGranted = acc;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isEnabled = widget.store.isAutoBookkeepingEnabled;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('自动记账')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Card(
+            color: isEnabled ? AppTheme.mint.withValues(alpha: 0.1) : null,
+            child: SwitchListTile(
+              title: const Text('开启自动记账'),
+              subtitle: const Text('在后台自动解析微信和支付宝的动账通知/支付页面'),
+              value: isEnabled,
+              onChanged: (value) {
+                widget.store.setAutoBookkeepingEnabled(value);
+                setState(() {});
+              },
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text('权限状态', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 12),
+          ListTile(
+            leading: Icon(
+              Icons.notifications_active_rounded,
+              color: _notifGranted ? AppTheme.mintDeep : AppTheme.warning,
+            ),
+            title: const Text('通知读取权限'),
+            subtitle: Text(_notifGranted ? '已授权' : '未授权，点击去开启'),
+            trailing: _notifGranted
+                ? const Icon(Icons.check_circle, color: AppTheme.mintDeep)
+                : const Icon(Icons.chevron_right),
+            onTap: () async {
+              await NotificationListenerService.requestPermission();
+              await _checkPermissions();
+              if (widget.store.isAutoBookkeepingEnabled &&
+                  (_notifGranted || _accGranted)) {
+                await widget.store.refreshAutoBookkeepingListening();
+              }
+            },
+          ),
+          ListTile(
+            leading: Icon(
+              Icons.accessibility_new_rounded,
+              color: _accGranted ? AppTheme.mintDeep : AppTheme.warning,
+            ),
+            title: const Text('无障碍服务权限'),
+            subtitle: Text(_accGranted ? '已授权' : '未授权，点击去开启'),
+            trailing: _accGranted
+                ? const Icon(Icons.check_circle, color: AppTheme.mintDeep)
+                : const Icon(Icons.chevron_right),
+            onTap: () async {
+              await FlutterAccessibilityService
+                  .requestAccessibilityPermission();
+              await _checkPermissions();
+              if (widget.store.isAutoBookkeepingEnabled &&
+                  (_notifGranted || _accGranted)) {
+                await widget.store.refreshAutoBookkeepingListening();
+              }
+            },
+          ),
+          const SizedBox(height: 24),
+          Text('运行说明', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 12),
+          const Text(
+              '1. 建议同时开启【通知读取】和【无障碍】权限以提高自动记账成功率。\n2. 已内置去重机制，同一笔交易如果在1分钟内被通知和无障碍同时捕获，只会记录一次。\n3. 查看微信/支付宝历史账单列表或单条账单详情页时，当前屏幕中识别到的记录也会自动补记。\n4. 红米 / HyperOS 设备请额外打开【自启动】、【无限制后台】、【锁定后台】并关闭省电限制，否则系统可能拦截通知监听或无障碍事件。'),
+        ],
+      ),
+    );
+  }
 }
 
 void _openReminderSettings(BuildContext context) {
@@ -401,39 +523,7 @@ Future<void> showBudgetDialog(
   BuildContext context,
   PocketMeowStore store,
 ) async {
-  final controller = TextEditingController(
-    text: store.totalBudget.toStringAsFixed(0),
-  );
-
-  await showDialog<void>(
-    context: context,
-    builder: (context) {
-      return AlertDialog(
-        title: const Text('修改月预算'),
-        content: TextField(
-          controller: controller,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(hintText: '输入本月总预算'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final value = double.tryParse(controller.text.trim());
-              if (value != null && value > 0) {
-                store.updateTotalBudget(value);
-              }
-              Navigator.of(context).pop();
-            },
-            child: const Text('保存'),
-          ),
-        ],
-      );
-    },
-  );
+  await showBudgetManagerSheet(context);
 }
 
 Future<void> showAddCategoryDialog(
@@ -707,6 +797,7 @@ Future<void> _exportData(BuildContext context, PocketMeowStore store) async {
         const SnackBar(content: Text('数据已导出，正在唤起分享...')),
       );
       // Share the file
+// ignore: deprecated_member_use
       await Share.shareXFiles(
         [XFile(file.path)],
         text: '这是我的钱喵记账数据备份文件',
@@ -796,18 +887,6 @@ Future<void> _checkForUpdates(BuildContext context) async {
                   info.hasUpdate
                       ? '检测到新版本，可以直接从版本清单里的下载地址获取最新 APK。'
                       : '当前安装版本已经不低于版本清单中的最新版本。',
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  '清单来源',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  info.manifestUrl,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppTheme.muted,
-                      ),
                 ),
                 const SizedBox(height: 14),
                 Text(

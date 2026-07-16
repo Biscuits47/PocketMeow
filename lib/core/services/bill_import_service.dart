@@ -5,6 +5,7 @@ import 'package:excel/excel.dart';
 import 'package:fast_gbk/fast_gbk.dart';
 import 'package:file_picker/file_picker.dart';
 
+import 'bill_category_mapper.dart';
 import '../../app/state/pocket_meow_store.dart';
 import '../../data/models/app_models.dart';
 
@@ -39,259 +40,6 @@ class BillImportService {
         return null;
       }
     }
-  }
-
-  String _inferCategoryId(
-      String note, String categoryStr, RecordType type, PocketMeowStore store) {
-    String categoryId = type == RecordType.income ? 'transfer' : 'daily';
-
-    // 1. Check if categoryStr is explicitly '转账' from our hint
-    if (categoryStr == '转账') {
-      try {
-        final cat = store.categories
-            .firstWhere((c) => c.name == '转账' && c.type == type);
-        return cat.id;
-      } catch (e) {
-        // Fall through
-      }
-    }
-
-    // 2. Smart inference based on note keywords (Higher Priority)
-    if (note.isNotEmpty) {
-      final text = note.toLowerCase();
-
-      // Keywords for Rent
-      final rentKeywords = ['房租', '交租', '租金', '押金', '公寓', '合租'];
-      for (final kw in rentKeywords) {
-        if (text.contains(kw)) {
-          try {
-            final cat = store.categories
-                .firstWhere((c) => c.name == '房租' && c.type == type);
-            return cat.id;
-          } catch (e) {
-            // Ignore
-          }
-        }
-      }
-
-      // Keywords for Living Expenses (Utilities)
-      final livingExpensesKeywords = ['水费', '电费', '热水', '话费', '水电'];
-      for (final kw in livingExpensesKeywords) {
-        if (text.contains(kw)) {
-          try {
-            final cat = store.categories
-                .firstWhere((c) => c.name == '生活缴费' && c.type == type);
-            return cat.id;
-          } catch (e) {
-            // Ignore
-          }
-        }
-      }
-
-      // Keywords for Transport
-      final transportKeywords = [
-        '地铁',
-        '交通',
-        '公交',
-        '火车票',
-        '飞机票',
-        '高德',
-        '打车',
-        '滴滴',
-        '轮渡',
-        '大巴',
-        '单车',
-        '哈啰',
-        '中铁网络',
-        '铁路',
-        '12306'
-      ];
-      for (final kw in transportKeywords) {
-        if (text.contains(kw)) {
-          try {
-            final cat = store.categories
-                .firstWhere((c) => c.name == '交通' && c.type == type);
-            return cat.id;
-          } catch (e) {
-            // Ignore
-          }
-        }
-      }
-
-      // Keywords for Food/Restaurant
-      final foodKeywords = [
-        '美团',
-        '饿了么',
-        '外卖',
-        '汉堡',
-        '肯德基',
-        '麦当劳',
-        '塔斯汀',
-        '大众点评',
-        '萨莉亚',
-        '餐饮',
-        '乡村基',
-        '食堂',
-        '咖啡',
-        '瑞幸',
-        '库迪',
-        '星巴克',
-        '奶茶',
-        '霸王茶姬',
-        'KOI',
-        '1点点',
-        '堂食',
-        '柠檬向右',
-        '喜茶',
-        'luckin coffee',
-        '点单',
-        '早餐',
-        '午餐',
-        '晚餐',
-        '面条',
-        '炒饭',
-        '闪购',
-        '一辛萬屋',
-        '烧饼',
-        '马记永',
-        '魔盒CITYBOX',
-        '左庭右院',
-        '古茗',
-        '可口可乐',
-        '廣蓮申',
-        '卤肉饭',
-        '天好',
-        'Coffee',
-        '点餐',
-        '包子',
-        '秦关中',
-        '小吃',
-        '水果',
-        '盒马',
-      ];
-      for (final kw in foodKeywords) {
-        if (text.contains(kw)) {
-          try {
-            final cat = store.categories
-                .firstWhere((c) => c.name == '餐饮' && c.type == type);
-            return cat.id;
-          } catch (e) {
-            // Ignore
-          }
-        }
-      }
-
-      // Keywords for Shopping
-      final shoppingKeywords = [
-        '淘宝',
-        '天猫',
-        '京东',
-        '拼多多',
-        '超市',
-        '便利店',
-        '美宜佳',
-        '全家',
-        '7-11',
-        '罗森',
-        '买菜'
-      ];
-      for (final kw in shoppingKeywords) {
-        if (text.contains(kw)) {
-          try {
-            final cat = store.categories
-                .firstWhere((c) => c.name == '购物' && c.type == type);
-            return cat.id;
-          } catch (e) {
-            // Ignore
-          }
-        }
-      }
-      // Keywords for Medical
-      final medicalKeywords = ['口腔', '医保', '住院', '门诊', '药房', '药店', '医院', '体检'];
-      for (final kw in medicalKeywords) {
-        if (text.contains(kw)) {
-          try {
-            final cat = store.categories
-                .firstWhere((c) => c.name == '医疗' && c.type == type);
-            return cat.id;
-          } catch (e) {
-            // Ignore
-          }
-        }
-      }
-      // Keywords for Entertainment
-      final entertainmentKeywords = [
-        '旅游',
-        '门票',
-        '彩票',
-        'steam',
-        'epic',
-        'ps5',
-        'playstation',
-        '游戏',
-        '电影',
-        '网吧',
-        'KTV',
-        '密室',
-        '剧本杀'
-            'psn'
-      ];
-      for (final kw in entertainmentKeywords) {
-        if (text.contains(kw)) {
-          try {
-            final cat = store.categories
-                .firstWhere((c) => c.name == '娱乐' && c.type == type);
-            return cat.id;
-          } catch (e) {
-            // Ignore
-          }
-        }
-      }
-    }
-
-    // 3. Fallback to map from Alipay's category column (Lower Priority)
-    if (categoryStr.isNotEmpty) {
-      String targetName = '';
-      if (categoryStr.contains('餐饮美食')) {
-        targetName = '餐饮';
-      } else if (categoryStr.contains('医疗健康')) {
-        targetName = '医疗';
-      } else if (categoryStr.contains('交通出行')) {
-        targetName = '交通';
-      } else if (categoryStr.contains('文化休闲') || categoryStr.contains('酒店旅游')) {
-        targetName = '娱乐';
-      } else if (categoryStr.contains('退款')) {
-        targetName = '退款';
-      } else if (categoryStr.contains('转账') ||
-          categoryStr.contains('红包') ||
-          categoryStr.contains('群收款')) {
-        targetName = '转账';
-      } else if (categoryStr.contains('日用') || categoryStr.contains('百货')) {
-        targetName = '日用';
-      } else if (categoryStr.contains('服饰') || categoryStr.contains('数码电器')) {
-        targetName = '购物';
-      }
-
-      if (targetName.isNotEmpty) {
-        try {
-          final cat = store.categories
-              .firstWhere((c) => c.name == targetName && c.type == type);
-          return cat.id;
-        } catch (e) {
-          // Ignore
-        }
-      } else {
-        try {
-          final cat = store.categories
-              .firstWhere((c) => c.name == categoryStr && c.type == type);
-          return cat.id;
-        } catch (e) {
-          // Ignore
-        }
-      }
-    }
-
-    return categoryId;
   }
 
   Future<ImportResult> importAlipayBill(
@@ -411,10 +159,7 @@ class BillImportService {
 
         amountStr = amountStr.replaceAll('¥', '').replaceAll(',', '').trim();
         double? amount = double.tryParse(amountStr);
-        if (amount == null ||
-            amount <= 0 ||
-            amount.isNaN ||
-            amount.isInfinite) {
+        if (amount == null || amount < 0 || amount.isNaN || amount.isInfinite) {
           isInvalid = true;
         }
 
@@ -439,7 +184,8 @@ class BillImportService {
           existingRecords.sort((a, b) => b.createdAt.compareTo(a.createdAt));
           categoryId = existingRecords.first.categoryId;
         } else {
-          categoryId = _inferCategoryId(note, categoryStr, type, store);
+          categoryId =
+              BillCategoryMapper.inferCategoryId(note, categoryStr, type, store);
         }
 
         int previousCount = store.records.length;
@@ -528,8 +274,9 @@ class BillImportService {
               : '';
 
           bool isInvalid = false;
-          if (typeStr == '/')
+          if (typeStr == '/') {
             isInvalid = true; // e.g. transfers between own accounts
+          }
 
           if (transactionTypeStr.contains('转入零钱通') ||
               transactionTypeStr.contains('零钱通转出')) {
@@ -539,7 +286,7 @@ class BillImportService {
           amountStr = amountStr.replaceAll('¥', '').replaceAll(',', '').trim();
           double? amount = double.tryParse(amountStr);
           if (amount == null ||
-              amount <= 0 ||
+              amount < 0 ||
               amount.isNaN ||
               amount.isInfinite) {
             isInvalid = true;
@@ -601,7 +348,12 @@ class BillImportService {
             existingRecords.sort((a, b) => b.createdAt.compareTo(a.createdAt));
             categoryId = existingRecords.first.categoryId;
           } else {
-            categoryId = _inferCategoryId(note, categoryHint, type, store);
+            categoryId = BillCategoryMapper.inferCategoryId(
+              note,
+              categoryHint,
+              type,
+              store,
+            );
           }
           int previousCount = store.records.length;
           store.addRecord(

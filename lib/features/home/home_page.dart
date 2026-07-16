@@ -55,7 +55,7 @@ class HomePage extends StatelessWidget {
             const SizedBox(height: 12),
             _TotalBudgetProgressCard(
               totalBudget: store.totalBudget,
-              spent: store.monthSpent,
+              spent: store.budgetConsumed,
               remainingBudget: store.remainingBudget,
             ),
             const SizedBox(height: 12),
@@ -85,7 +85,8 @@ class HomePage extends StatelessWidget {
                                     context: context,
                                     isScrollControlled: true,
                                     backgroundColor: Colors.transparent,
-                                    builder: (_) => AddExpenseSheet(expense: expense),
+                                    builder: (_) =>
+                                        AddExpenseSheet(expense: expense),
                                   );
                                 },
                               ),
@@ -245,7 +246,8 @@ class _TotalBudgetProgressCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final progress = totalBudget <= 0 ? 0.0 : (spent / totalBudget).clamp(0.0, 1.0);
+    final progress =
+        totalBudget <= 0 ? 0.0 : (spent / totalBudget).clamp(0.0, 1.0);
     final statusText = remainingBudget >= 0
         ? '剩余 ${formatShortCurrency(remainingBudget)}'
         : '已超支 ${formatShortCurrency(remainingBudget.abs())}';
@@ -274,7 +276,7 @@ class _TotalBudgetProgressCard extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    '本月总预算',
+                    '本期总预算',
                     style: theme.textTheme.titleMedium,
                   ),
                 ),
@@ -293,7 +295,8 @@ class _TotalBudgetProgressCard extends StatelessWidget {
                 value: progress,
                 minHeight: 10,
                 backgroundColor: const Color(0xFFF0F3F4),
-                valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.mintDeep),
+                valueColor:
+                    const AlwaysStoppedAnimation<Color>(AppTheme.mintDeep),
               ),
             ),
             const SizedBox(height: 12),
@@ -342,7 +345,8 @@ class _InsightCard extends StatelessWidget {
                 color: AppTheme.mint.withValues(alpha: 0.14),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: const Icon(Icons.auto_graph_rounded, color: AppTheme.mintDeep),
+              child: const Icon(Icons.auto_graph_rounded,
+                  color: AppTheme.mintDeep),
             ),
             const SizedBox(width: 14),
             Expanded(

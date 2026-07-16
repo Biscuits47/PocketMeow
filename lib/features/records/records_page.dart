@@ -5,7 +5,8 @@ import '../../app/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/models/app_models.dart';
 import '../add_expense/add_expense_sheet.dart';
-import '../settings/settings_page.dart';
+import '../budget/budget_manager_sheet.dart';
+import 'budget_segmented_bar.dart';
 import 'search_records_sheet.dart';
 
 class RecordsPage extends StatefulWidget {
@@ -41,33 +42,52 @@ class _RecordsPageState extends State<RecordsPage> {
             r.createdAt.day == now.day)
         .fold(0.0, (sum, r) => sum + r.amount);
 
-    final actualMonthSpentForBudget = store.records
+    final periodRange = store.monthlyBudgetRangeFor(now);
+    final periodRecords = store.records
         .where((r) =>
-            r.type == RecordType.expense &&
-            r.createdAt.year == now.year &&
-            r.createdAt.month == now.month &&
-            !r.excludeFromBudget)
+            !r.createdAt.isBefore(periodRange.start) &&
+            r.createdAt.isBefore(periodRange.end))
+        .toList();
+
+    final actualMonthSpentForBudget = periodRecords
+        .where((r) => r.type == RecordType.expense && !r.excludeFromBudget)
         .fold(0.0, (sum, r) => sum + r.amount);
 
-    final actualMonthSpentTotal = store.records
-        .where((r) =>
-            r.type == RecordType.expense &&
-            r.createdAt.year == now.year &&
-            r.createdAt.month == now.month)
+    final actualMonthSpentTotal = periodRecords
+        .where((r) => r.type == RecordType.expense)
         .fold(0.0, (sum, r) => sum + r.amount);
 
-    final actualMonthIncome = store.records
-        .where((r) =>
-            r.type == RecordType.income &&
-            r.createdAt.year == now.year &&
-            r.createdAt.month == now.month)
+    final actualMonthIncome = periodRecords
+        .where((r) => r.type == RecordType.income)
         .fold(0.0, (sum, r) => sum + r.amount);
 
-    final actualBudgetUsage = store.totalBudget <= 0
-        ? 0.0
-        : (actualMonthSpentForBudget / store.totalBudget).clamp(0.0, 1.0);
+    final periodBudget = store.totalBudgetFor(now);
+    final periodBuckets = store.budgetBucketsFor(now);
+    final actualBalance = periodBudget - actualMonthSpentForBudget;
+    final budgetBalanceLabel = actualBalance >= 0 ? '预算结余' : '预算超支';
 
-    final actualBalance = store.totalBudget - actualMonthSpentTotal;
+    final consumedByBucket = <String, double>{};
+    for (final bucket in periodBuckets) {
+      consumedByBucket[bucket.id] = 0;
+    }
+    final categoryToBucket = store.budgetCategoryToBucketFor(now);
+    for (final record in periodRecords) {
+      if (record.type != RecordType.expense || record.excludeFromBudget) {
+        continue;
+      }
+      final bucketId = categoryToBucket[record.categoryId] ??
+          PocketMeowStore.otherBudgetBucketId;
+      consumedByBucket[bucketId] =
+          (consumedByBucket[bucketId] ?? 0) + record.amount;
+    }
+
+    final segments = periodBuckets
+        .map((bucket) => BudgetSegment(
+              color: Color(bucket.colorValue),
+              amount: consumedByBucket[bucket.id] ?? 0,
+            ))
+        .where((segment) => segment.amount > 0)
+        .toList();
 
     return SafeArea(
       child: Column(
@@ -162,20 +182,18 @@ class _RecordsPageState extends State<RecordsPage> {
                             ],
                           ),
                           const SizedBox(height: 18),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(999),
-                            child: LinearProgressIndicator(
-                              value: actualBudgetUsage,
-                              minHeight: 10,
+                          GestureDetector(
+                            onTap: () => showBudgetManagerSheet(
+                              context,
+                              initialDate: now,
+                            ),
+                            behavior: HitTestBehavior.opaque,
+                            child: BudgetSegmentedBar(
+                              totalBudget: periodBudget,
+                              segments: segments,
+                              height: 10,
                               backgroundColor:
                                   Colors.white.withValues(alpha: 0.10),
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                actualBudgetUsage >= 1.0
-                                    ? Colors.red
-                                    : Color.lerp(AppTheme.mint, Colors.red,
-                                            actualBudgetUsage) ??
-                                        AppTheme.mint,
-                              ),
                             ),
                           ),
                           const SizedBox(height: 20),
@@ -186,7 +204,7 @@ class _RecordsPageState extends State<RecordsPage> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      '本月支出',
+                                      '本期支出',
                                       style:
                                           theme.textTheme.bodySmall?.copyWith(
                                         color: Colors.white
@@ -255,14 +273,17 @@ class _RecordsPageState extends State<RecordsPage> {
                               ),
                               Expanded(
                                 child: GestureDetector(
-                                  onTap: () => showBudgetDialog(context, store),
+                                  onTap: () => showBudgetManagerSheet(
+                                    context,
+                                    initialDate: now,
+                                  ),
                                   behavior: HitTestBehavior.opaque,
                                   child: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        '预算结余',
+                                        budgetBalanceLabel,
                                         style:
                                             theme.textTheme.bodySmall?.copyWith(
                                           color: Colors.white
@@ -271,7 +292,8 @@ class _RecordsPageState extends State<RecordsPage> {
                                       ),
                                       const SizedBox(height: 6),
                                       Text(
-                                        formatShortCurrency(actualBalance),
+                                        formatShortCurrency(
+                                            actualBalance.abs()),
                                         style: theme.textTheme.titleMedium
                                             ?.copyWith(
                                           color: Colors.white,
@@ -431,10 +453,12 @@ class RecordRow extends StatelessWidget {
     super.key,
     required this.item,
     required this.onTap,
+    this.padding,
   });
 
   final RecordItem item;
   final VoidCallback onTap;
+  final EdgeInsetsGeometry? padding;
 
   @override
   Widget build(BuildContext context) {
@@ -443,73 +467,96 @@ class RecordRow extends StatelessWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(18),
       onTap: onTap,
-      child: Row(
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF1F4F6),
-              borderRadius: BorderRadius.circular(15),
+      child: Padding(
+        padding: padding ?? EdgeInsets.zero,
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F4F6),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: Icon(iconForCategory(item.iconKey)),
             ),
-            child: Icon(iconForCategory(item.iconKey)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        item.title,
-                        style: theme.textTheme.titleMedium,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (item.record.excludeFromBudget &&
-                        item.type == RecordType.expense) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE9EEF1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
                         child: Text(
-                          '不计入预算',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            fontSize: 10,
-                            color: AppTheme.muted,
+                          item.title,
+                          style: theme.textTheme.titleMedium,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (item.record.source != null) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppTheme.mint.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            item.record.source!.label,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontSize: 10,
+                              color: AppTheme.mintDeep,
+                            ),
                           ),
                         ),
-                      ),
+                      ],
+                      if (item.record.excludeFromBudget &&
+                          item.type == RecordType.expense) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE9EEF1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            '不计入预算',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontSize: 10,
+                              color: AppTheme.muted,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  item.record.note.isNotEmpty
-                      ? '${item.time} · ${item.record.note}'
-                      : item.time,
-                  style: theme.textTheme.bodySmall,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    item.record.note.isNotEmpty
+                        ? '${item.time} · ${item.record.note}'
+                        : item.time,
+                    style: theme.textTheme.bodySmall,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
             ),
-          ),
-          Text(
-            formatSignedAmount(item.amount, item.type),
-            style: theme.textTheme.titleMedium?.copyWith(
-              color: item.type == RecordType.income
-                  ? AppTheme.mintDeep
-                  : AppTheme.ink,
+            Text(
+              formatSignedAmount(item.amount, item.type),
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: item.type == RecordType.income
+                    ? AppTheme.mintDeep
+                    : AppTheme.ink,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

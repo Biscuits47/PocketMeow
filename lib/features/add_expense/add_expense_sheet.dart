@@ -171,7 +171,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                                 value: _excludeFromBudget,
                                 onChanged: (val) =>
                                     setState(() => _excludeFromBudget = val),
-                                activeColor: AppTheme.mintDeep,
+                                activeThumbColor: AppTheme.mintDeep,
                                 activeTrackColor:
                                     AppTheme.mint.withValues(alpha: 0.3),
                               ),
@@ -309,7 +309,9 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                                     createdAt: _selectedDateTime,
                                   );
                                 }
-                                Navigator.of(context).pop();
+                                if (mounted) {
+                                  Navigator.of(context).pop();
+                                }
                               },
                               child: Text(isEditing ? '更新' : '保存'),
                             ),
@@ -339,7 +341,10 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
       confirmText: '确定',
       locale: const Locale('zh', 'CN'),
     );
-    if (picked == null || !mounted) {
+    if (picked == null) {
+      return;
+    }
+    if (!mounted) {
       return;
     }
 
@@ -358,7 +363,10 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
         );
       },
     );
-    if (pickedTime == null || !mounted) {
+    if (pickedTime == null) {
+      return;
+    }
+    if (!mounted) {
       return;
     }
 
@@ -400,7 +408,8 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
       ),
     );
 
-    if (confirmed == true && mounted) {
+    if (confirmed == true) {
+      if (!context.mounted) return;
       store.deleteRecord(widget.expense!.id);
       Navigator.of(context).pop();
     }
