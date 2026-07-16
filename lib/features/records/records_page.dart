@@ -357,7 +357,7 @@ class _DaySection extends StatelessWidget {
           children: [
             Row(
               children: [
-                Text(formatDayLabel(section.date),
+                Text(formatDayLabelWithWeekday(section.date),
                     style: theme.textTheme.titleLarge),
                 const Spacer(),
                 Row(

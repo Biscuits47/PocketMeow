@@ -11,6 +11,9 @@ import '../add_expense/add_expense_sheet.dart';
 import '../records/records_page.dart';
 import '../settings/settings_page.dart';
 
+const double _kPieOtherThreshold = 0.045;
+const int _kPieMaxVisibleLabels = 9;
+
 class DataPage extends StatefulWidget {
   const DataPage({super.key});
 
@@ -223,7 +226,9 @@ class _SpendingDistributionCard extends StatelessWidget {
     List<CategorySpendData> otherItems = [];
 
     for (final item in items) {
-      if (total > 0 && (item.amount / total) < 0.10) {
+      final share = total > 0 ? item.amount / total : 0.0;
+      if (share < _kPieOtherThreshold ||
+          pieItems.length >= _kPieMaxVisibleLabels) {
         otherItems.add(item);
       } else {
         pieItems.add(item);
@@ -281,21 +286,21 @@ class _SpendingDistributionCard extends StatelessWidget {
               Column(
                 children: [
                   SizedBox(
-                    height: 240,
+                    height: 220,
                     child: Stack(
                       alignment: Alignment.center,
                       children: [
                         PieChart(
                           PieChartData(
                             startDegreeOffset: -90,
-                            centerSpaceRadius: 50,
+                            centerSpaceRadius: 44,
                             sectionsSpace: 2,
                             sections: pieItems.map(
                               (item) {
                                 return PieChartSectionData(
                                   color: Color(item.category.colorValue),
                                   value: item.amount,
-                                  radius: 46,
+                                  radius: 36,
                                   title: '',
                                 );
                               },
@@ -1236,34 +1241,30 @@ class _PieChartLabelPainter extends CustomPainter {
     if (items.isEmpty || total <= 0) return;
 
     final center = Offset(size.width / 2, size.height / 2);
-    const pieOuterRadius = 96.0; // centerSpaceRadius(50) + radius(46)
-    const line1Length = 14.0;
-    const line2Length = 16.0;
+    const pieOuterRadius = 80.0; // centerSpaceRadius(44) + radius(36)
+    const line1Length = 10.0;
+    const labelInset = 8.0;
+    const horizontalInset = 20.0;
+    const labelGap = 8.0;
+    const maxLabelWidth = 112.0;
 
     double currentAngle = -90.0;
-
-    // Adjust these to handle label collisions
-    List<Rect> labelRects = [];
+    final leftEntries = <_PieLabelLayoutEntry>[];
+    final rightEntries = <_PieLabelLayoutEntry>[];
 
     for (final item in items) {
       final percentage = item.amount / total;
       final angle = percentage * 360.0;
       final midAngle = currentAngle + angle / 2;
 
-      final radians = midAngle * (3.1415926535 / 180.0);
-
-      // Start from the outer edge of the pie
+      final radians = midAngle * (pi / 180.0);
       final x1 = center.dx + pieOuterRadius * cos(radians);
       final y1 = center.dy + pieOuterRadius * sin(radians);
-
-      // Angled line outwards
       final x2 = center.dx + (pieOuterRadius + line1Length) * cos(radians);
-      var y2 = center.dy + (pieOuterRadius + line1Length) * sin(radians);
-
-      // Collision detection and adjustment for y2
+      final y2 = center.dy + (pieOuterRadius + line1Length) * sin(radians);
       final isRightSide = cos(radians) >= 0;
 
-      final percentStr = (percentage * 100).toStringAsFixed(2);
+      final percentStr = _formatPieLabelPercent(percentage);
       final labelText = '${item.category.name} $percentStr%';
 
       final textPainter = TextPainter(
@@ -1271,88 +1272,156 @@ class _PieChartLabelPainter extends CustomPainter {
           text: labelText,
           style: const TextStyle(
             color: Color(0xFF5E656B),
-            fontSize: 12,
+            fontSize: 11,
             fontWeight: FontWeight.w400,
           ),
         ),
         textDirection: TextDirection.ltr,
       );
-      textPainter.layout();
+      textPainter.layout(maxWidth: maxLabelWidth);
 
-      double labelY = y2 - textPainter.height / 2;
-      double labelXCandidate = isRightSide
-          ? x2 + line2Length + 4
-          : x2 - line2Length - textPainter.width - 4;
-
-      Rect currentRect = Rect.fromLTWH(
-          labelXCandidate, labelY, textPainter.width, textPainter.height);
-
-      // Simple collision avoidance: push based on side
-      bool collision = true;
-      int iterations = 0;
-      while (collision && iterations < 20) {
-        collision = false;
-        for (final rect in labelRects) {
-          final inflatedRect = rect.inflate(4.0);
-          if (inflatedRect.overlaps(currentRect)) {
-            collision = true;
-            // Right side: labels go top to bottom, so push down
-            // Left side: labels go bottom to top, so push up
-            if (isRightSide) {
-              y2 += 14; // Push down
-            } else {
-              y2 -= 14; // Push up
-            }
-            labelY = y2 - textPainter.height / 2;
-            currentRect = Rect.fromLTWH(
-                labelXCandidate, labelY, textPainter.width, textPainter.height);
-            break;
-          }
-        }
-        iterations++;
+      final entry = _PieLabelLayoutEntry(
+        color: Color(item.category.colorValue),
+        painter: textPainter,
+        anchor: Offset(x1, y1),
+        bend: Offset(x2, y2),
+        targetCenterY: y2,
+      );
+      if (isRightSide) {
+        rightEntries.add(entry);
+      } else {
+        leftEntries.add(entry);
       }
-
-      // Clamp to prevent going out of bounds
-      final double maxY = (size.height - textPainter.height) > 0
-          ? size.height - textPainter.height
-          : 0.0;
-      final double maxX = (size.width - textPainter.width) > 0
-          ? size.width - textPainter.width
-          : 0.0;
-      labelY = labelY.clamp(0.0, maxY);
-      labelXCandidate = labelXCandidate.clamp(0.0, maxX);
-      y2 = labelY + textPainter.height / 2;
-
-      currentRect = Rect.fromLTWH(
-          labelXCandidate, labelY, textPainter.width, textPainter.height);
-      labelRects.add(currentRect);
-
-      // Horizontal line
-      final x3 = isRightSide
-          ? labelXCandidate - 4
-          : labelXCandidate + textPainter.width + 4;
-      final y3 = y2;
-
-      final linePaint = Paint()
-        ..color = Color(item.category.colorValue)
-        ..strokeWidth = 1.0
-        ..style = PaintingStyle.stroke;
-
-      final path = Path()
-        ..moveTo(x1, y1)
-        ..lineTo(x2, y2)
-        ..lineTo(x3, y3);
-
-      canvas.drawPath(path, linePaint);
-
-      textPainter.paint(canvas, Offset(labelXCandidate, labelY));
 
       currentAngle += angle;
     }
+
+    _layoutPieLabels(
+      canvas: canvas,
+      size: size,
+      entries: rightEntries,
+      isRightSide: true,
+      labelInset: labelInset,
+      horizontalInset: horizontalInset,
+      labelGap: labelGap,
+    );
+    _layoutPieLabels(
+      canvas: canvas,
+      size: size,
+      entries: leftEntries,
+      isRightSide: false,
+      labelInset: labelInset,
+      horizontalInset: horizontalInset,
+      labelGap: labelGap,
+    );
   }
 
   @override
   bool shouldRepaint(_PieChartLabelPainter oldDelegate) {
     return items != oldDelegate.items || total != oldDelegate.total;
   }
+}
+
+String _formatPieLabelPercent(double value) {
+  final percent = value * 100;
+  if (percent >= 10) {
+    return percent.toStringAsFixed(1);
+  }
+  return percent.toStringAsFixed(2);
+}
+
+void _layoutPieLabels({
+  required Canvas canvas,
+  required Size size,
+  required List<_PieLabelLayoutEntry> entries,
+  required bool isRightSide,
+  required double labelInset,
+  required double horizontalInset,
+  required double labelGap,
+}) {
+  if (entries.isEmpty) {
+    return;
+  }
+
+  entries.sort((a, b) => a.targetCenterY.compareTo(b.targetCenterY));
+  final minTop = labelInset;
+  final maxBottom = size.height - labelInset;
+
+  for (var index = 0; index < entries.length; index++) {
+    final entry = entries[index];
+    final desiredTop = entry.targetCenterY - entry.height / 2;
+    if (index == 0) {
+      entry.top = max(minTop, desiredTop);
+    } else {
+      final previous = entries[index - 1];
+      entry.top = max(
+        previous.top + previous.height + labelGap,
+        desiredTop,
+      );
+    }
+  }
+
+  final overflow = entries.last.top + entries.last.height - maxBottom;
+  if (overflow > 0) {
+    entries.last.top -= overflow;
+    for (var index = entries.length - 2; index >= 0; index--) {
+      final next = entries[index + 1];
+      entries[index].top = min(
+        entries[index].top,
+        next.top - entries[index].height - labelGap,
+      );
+    }
+  }
+
+  if (entries.first.top < minTop) {
+    final shift = minTop - entries.first.top;
+    for (final entry in entries) {
+      entry.top += shift;
+    }
+  }
+
+  for (final entry in entries) {
+    final labelX = isRightSide
+        ? size.width - entry.width - horizontalInset
+        : horizontalInset;
+    final labelY = entry.top.clamp(
+      minTop,
+      maxBottom - entry.height,
+    );
+    final connectorX = isRightSide ? labelX - 4 : labelX + entry.width + 4;
+    final connectorY = labelY + entry.height / 2;
+
+    final linePaint = Paint()
+      ..color = entry.color
+      ..strokeWidth = 1.0
+      ..style = PaintingStyle.stroke;
+
+    final path = Path()
+      ..moveTo(entry.anchor.dx, entry.anchor.dy)
+      ..lineTo(entry.bend.dx, connectorY)
+      ..lineTo(connectorX, connectorY);
+
+    canvas.drawPath(path, linePaint);
+    entry.painter.paint(canvas, Offset(labelX, labelY));
+  }
+}
+
+class _PieLabelLayoutEntry {
+  _PieLabelLayoutEntry({
+    required this.color,
+    required this.painter,
+    required this.anchor,
+    required this.bend,
+    required this.targetCenterY,
+  });
+
+  final Color color;
+  final TextPainter painter;
+  final Offset anchor;
+  final Offset bend;
+  final double targetCenterY;
+  double top = 0;
+
+  double get width => painter.width;
+  double get height => painter.height;
 }

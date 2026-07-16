@@ -269,7 +269,27 @@ class PocketMeowStore extends ChangeNotifier {
   }
 
   List<ExpenseCategory> categoriesForType(RecordType type) {
-    return _categories.where((item) => item.type == type).toList();
+    final matches = _categories.where((item) => item.type == type).toList();
+    final originalOrder = <String, int>{
+      for (var index = 0; index < _categories.length; index++)
+        _categories[index].id: index,
+    };
+    int priorityFor(ExpenseCategory category) {
+      if (type == RecordType.expense && category.id == 'daily') {
+        return 0;
+      }
+      return category.isSystem ? 1 : 2;
+    }
+
+    matches.sort((a, b) {
+      final priorityCompare = priorityFor(a).compareTo(priorityFor(b));
+      if (priorityCompare != 0) {
+        return priorityCompare;
+      }
+      return (originalOrder[a.id] ?? 1 << 20)
+          .compareTo(originalOrder[b.id] ?? 1 << 20);
+    });
+    return matches;
   }
 
   DateTimeRange monthlyBudgetRangeFor(DateTime date) {
@@ -701,7 +721,7 @@ class PocketMeowStore extends ChangeNotifier {
 
   Future<void> refreshAutoBookkeepingListening() async {
     if (!_isAutoBookkeepingEnabled) return;
-    await autoBookkeepingService.restartListening();
+    await autoBookkeepingService.syncListeningWithPermissions();
   }
 
   @override
@@ -1452,6 +1472,14 @@ class PocketMeowStore extends ChangeNotifier {
     _totalBudget = 6000;
     _categories = const [
       ExpenseCategory(
+          id: 'daily',
+          name: '日用',
+          colorValue: 0xFFFFB74D,
+          iconKey: 'local_mall',
+          limit: 500,
+          type: RecordType.expense,
+          isSystem: true),
+      ExpenseCategory(
           id: 'food',
           name: '餐饮',
           colorValue: 0xFFE57373,
@@ -1481,14 +1509,6 @@ class PocketMeowStore extends ChangeNotifier {
           colorValue: 0xFF9575CD,
           iconKey: 'sports_esports',
           limit: 800,
-          type: RecordType.expense,
-          isSystem: true),
-      ExpenseCategory(
-          id: 'daily',
-          name: '日用',
-          colorValue: 0xFFFFB74D,
-          iconKey: 'local_mall',
-          limit: 500,
           type: RecordType.expense,
           isSystem: true),
       ExpenseCategory(

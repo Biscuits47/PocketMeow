@@ -230,14 +230,29 @@ class _AutoBookkeepingPage extends StatefulWidget {
   State<_AutoBookkeepingPage> createState() => _AutoBookkeepingPageState();
 }
 
-class _AutoBookkeepingPageState extends State<_AutoBookkeepingPage> {
+class _AutoBookkeepingPageState extends State<_AutoBookkeepingPage>
+    with WidgetsBindingObserver {
   bool _notifGranted = false;
   bool _accGranted = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _checkPermissions();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkPermissions();
+    }
   }
 
   Future<void> _checkPermissions() async {
@@ -302,7 +317,11 @@ class _AutoBookkeepingPageState extends State<_AutoBookkeepingPage> {
               color: _accGranted ? AppTheme.mintDeep : AppTheme.warning,
             ),
             title: const Text('无障碍服务权限'),
-            subtitle: Text(_accGranted ? '已授权' : '未授权，点击去开启'),
+            subtitle: Text(
+              _accGranted
+                  ? '已授权'
+                  : '未授权，点击去开启。HyperOS / Android 13+ 若提示未知来源或受限设置，请先到应用信息里允许受限设置。',
+            ),
             trailing: _accGranted
                 ? const Icon(Icons.check_circle, color: AppTheme.mintDeep)
                 : const Icon(Icons.chevron_right),
@@ -315,6 +334,26 @@ class _AutoBookkeepingPageState extends State<_AutoBookkeepingPage> {
                 await widget.store.refreshAutoBookkeepingListening();
               }
             },
+          ),
+          const SizedBox(height: 24),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF6E9),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFFFE1AF)),
+            ),
+            child: Text(
+              'HyperOS 常见限制：\n'
+              '1. 如果无障碍页显示“未知来源应用”或“无法开启”，请先进入系统设置 > 应用管理 > 钱喵 > 右上角更多/菜单 > 允许受限设置。\n'
+              '2. 如果是应用内下载或手动安装的更新包，系统更容易把无障碍视为高风险，更新后要重新确认权限状态。\n'
+              '3. 建议同时打开自启动、无限制后台、锁定后台，并关闭省电限制，否则通知监听和无障碍都可能被系统拦截。\n'
+              '4. 更新完成后回到 App，本页会自动重新检查权限状态；如果显示已开但不生效，通常需要手动关闭再重新打开一次无障碍。',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                height: 1.55,
+                color: const Color(0xFF7A5A16),
+              ),
+            ),
           ),
           const SizedBox(height: 24),
           Text('运行说明', style: theme.textTheme.titleMedium),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
@@ -14,19 +16,32 @@ class PocketMeowApp extends StatefulWidget {
   State<PocketMeowApp> createState() => _PocketMeowAppState();
 }
 
-class _PocketMeowAppState extends State<PocketMeowApp> {
+class _PocketMeowAppState extends State<PocketMeowApp>
+    with WidgetsBindingObserver {
   late final PocketMeowStore _store;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _store = PocketMeowStore()..load();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _store.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed ||
+        !_store.isReady ||
+        !_store.isAutoBookkeepingEnabled) {
+      return;
+    }
+    unawaited(_store.refreshAutoBookkeepingListening());
   }
 
   @override

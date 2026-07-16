@@ -28,12 +28,22 @@ class AutoBookkeepingService {
   bool get isListening => _isListening;
 
   Future<void> startListening() async {
-    if (_isListening) return;
-
     final notifGranted =
         await NotificationListenerService.isPermissionGranted();
     final accGranted =
         await FlutterAccessibilityService.isAccessibilityPermissionEnabled();
+    final hasNotificationSub = _notificationSub != null;
+    final hasAccessibilitySub = _accessibilitySub != null;
+    if (_isListening &&
+        hasNotificationSub == notifGranted &&
+        hasAccessibilitySub == accGranted) {
+      return;
+    }
+
+    if (hasNotificationSub || hasAccessibilitySub) {
+      stopListening();
+    }
+
     var hasSubscription = false;
 
     if (notifGranted) {
@@ -65,6 +75,20 @@ class AutoBookkeepingService {
 
   Future<void> restartListening() async {
     stopListening();
+    await startListening();
+  }
+
+  Future<void> syncListeningWithPermissions() async {
+    final notifGranted =
+        await NotificationListenerService.isPermissionGranted();
+    final accGranted =
+        await FlutterAccessibilityService.isAccessibilityPermissionEnabled();
+
+    if (!notifGranted && !accGranted) {
+      stopListening();
+      return;
+    }
+
     await startListening();
   }
 
@@ -130,46 +154,48 @@ class AutoBookkeepingService {
 
   void _parseWeChat(String title, String content) {
     final combined = '$title $content';
-    if (!_containsPaymentKeyword(combined)) return;
+    final match = _extractNotificationMatch(combined);
+    if (match == null) return;
+    if (!_containsPaymentKeyword(combined) &&
+        !_containsPlatformKeyword(combined, '微信')) {
+      return;
+    }
 
-    final amount = _extractAmountFromText(combined);
-    if (amount == null || amount <= 0) return;
-
-    final isIncome = _looksLikeIncome(combined);
     final note = _buildPlatformNote(
       title,
       incomeNote: '微信收款',
       expenseNote: '微信支付',
-      genericTitles: const ['微信支付', '微信通知', '微信'],
-      isIncome: isIncome,
+      genericTitles: const ['微信支付', '微信通知', '微信', '微信支付助手'],
+      isIncome: match.type == RecordType.income,
     );
     _addRecordIfUnique(
-      amount,
+      match.amount,
       note,
-      isIncome ? RecordType.income : RecordType.expense,
+      match.type,
       source: RecordSource.autoWeChat,
     );
   }
 
   void _parseAlipay(String title, String content) {
     final combined = '$title $content';
-    if (!_containsPaymentKeyword(combined)) return;
+    final match = _extractNotificationMatch(combined);
+    if (match == null) return;
+    if (!_containsPaymentKeyword(combined) &&
+        !_containsPlatformKeyword(combined, '支付宝')) {
+      return;
+    }
 
-    final amount = _extractAmountFromText(combined);
-    if (amount == null || amount <= 0) return;
-
-    final isIncome = _looksLikeIncome(combined);
     final note = _buildPlatformNote(
       title,
       incomeNote: '支付宝收款',
       expenseNote: '支付宝支付',
-      genericTitles: const ['支付宝通知', '支付宝', '支付提醒'],
-      isIncome: isIncome,
+      genericTitles: const ['支付宝通知', '支付宝', '支付提醒', '支付宝支付'],
+      isIncome: match.type == RecordType.income,
     );
     _addRecordIfUnique(
-      amount,
+      match.amount,
       note,
-      isIncome ? RecordType.income : RecordType.expense,
+      match.type,
       source: RecordSource.autoAlipay,
     );
   }
@@ -332,12 +358,39 @@ class AutoBookkeepingService {
   }
 
   bool _containsPaymentKeyword(String text) {
-    const keywords = ['支付', '付款', '收款', '到账', '转账', '二维码收款'];
+    const keywords = [
+      '支付',
+      '付款',
+      '已支付',
+      '支付成功',
+      '收款',
+      '收款成功',
+      '收钱到账',
+      '到账',
+      '转账',
+      '退款',
+      '二维码收款',
+      '动账',
+      '账单',
+      '交易',
+    ];
     return keywords.any(text.contains);
   }
 
   bool _looksLikeIncome(String text) {
-    return text.contains('收款') || text.contains('到账');
+    return text.contains('收款') ||
+        text.contains('到账') ||
+        text.contains('退款') ||
+        text.contains('转入');
+  }
+
+  bool _containsPlatformKeyword(String text, String platform) {
+    if (platform == '微信') {
+      return text.contains('微信') ||
+          text.contains('微信支付') ||
+          text.contains('微信支付助手');
+    }
+    return text.contains('支付宝') || text.contains('支付宝提醒');
   }
 
   bool _containsNodeFragment(List<String> nodesText, String fragment) {
@@ -576,9 +629,22 @@ class AutoBookkeepingService {
   }
 
   double? _extractAmountFromText(String text) {
-    final match = RegExp(r'[¥￥]?\s*(\d+(?:\.\d{1,2})?)\s*元?').firstMatch(text);
-    if (match == null) return null;
-    return double.tryParse(match.group(1) ?? '');
+    final patterns = [
+      RegExp(r'[¥￥]\s*(\d+(?:\.\d{1,2})?)'),
+      RegExp(r'(\d+(?:\.\d{1,2})?)\s*元'),
+      RegExp(r'金额[:：]?\s*[¥￥]?\s*(\d+(?:\.\d{1,2})?)'),
+    ];
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(text);
+      if (match == null) {
+        continue;
+      }
+      final amount = double.tryParse(match.group(1) ?? '');
+      if (amount != null && amount > 0) {
+        return amount;
+      }
+    }
+    return null;
   }
 
   double? _extractLeadingAmount(String text) {
@@ -607,6 +673,42 @@ class AutoBookkeepingService {
       amount: amount,
       type: type,
       keyword: keyword,
+    );
+  }
+
+  _NotificationMatch? _extractNotificationMatch(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+
+    final signed = RegExp(r'([+-])\s*[¥￥]?\s*(\d+(?:\.\d{1,2})?)\s*元?')
+        .firstMatch(trimmed);
+    if (signed != null) {
+      final amount = double.tryParse(signed.group(2)!);
+      if (amount != null && amount > 0) {
+        return _NotificationMatch(
+          amount: amount,
+          type: signed.group(1) == '+' ? RecordType.income : RecordType.expense,
+        );
+      }
+    }
+
+    final keywordAmount = _extractKeywordAmount(trimmed);
+    if (keywordAmount != null) {
+      return _NotificationMatch(
+        amount: keywordAmount.amount,
+        type: keywordAmount.type,
+      );
+    }
+
+    final amount = _extractAmountFromText(trimmed);
+    if (amount == null || amount <= 0) {
+      return null;
+    }
+    return _NotificationMatch(
+      amount: amount,
+      type: _looksLikeIncome(trimmed) ? RecordType.income : RecordType.expense,
     );
   }
 
@@ -771,4 +873,14 @@ class _KeywordAmountMatch {
   final double amount;
   final RecordType type;
   final String keyword;
+}
+
+class _NotificationMatch {
+  const _NotificationMatch({
+    required this.amount,
+    required this.type,
+  });
+
+  final double amount;
+  final RecordType type;
 }

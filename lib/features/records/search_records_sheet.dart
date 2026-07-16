@@ -232,7 +232,7 @@ class _SearchRecordsSheetState extends State<SearchRecordsSheet> {
                             Padding(
                               padding: const EdgeInsets.symmetric(vertical: 8),
                               child: Text(
-                                formatDayLabel(section.date),
+                                formatDayLabelWithWeekday(section.date),
                                 style: theme.textTheme.titleSmall
                                     ?.copyWith(color: AppTheme.muted),
                               ),

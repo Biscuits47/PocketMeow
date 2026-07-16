@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../app/state/pocket_meow_store.dart';
 import '../../app/theme/app_theme.dart';
@@ -131,16 +132,22 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                     const SizedBox(height: 22),
                     TextFormField(
                       controller: _amountController,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: TextInputType.text,
+                      textInputAction: TextInputAction.done,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(
+                          RegExp(r'[0-9+\-*/xX×÷()., ]'),
+                        ),
+                      ],
                       style: theme.textTheme.headlineMedium,
                       validator: (value) {
-                        final amount = double.tryParse((value ?? '').trim());
+                        final amount = _tryParseAmountExpression(value ?? '');
                         if (amount == null || amount <= 0) {
                           return '请输入正确金额';
                         }
                         return null;
                       },
+                      onFieldSubmitted: (_) => _applyAmountExpression(),
                       decoration: const InputDecoration(
                         hintText: '输入金额',
                         prefixText: '¥ ',
@@ -276,13 +283,15 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                             height: 56,
                             child: FilledButton(
                               onPressed: () {
+                                final resolvedAmount =
+                                    _applyAmountExpression(silent: true);
                                 if (!_formKey.currentState!.validate() ||
-                                    _selectedCategory == null) {
+                                    _selectedCategory == null ||
+                                    resolvedAmount == null) {
                                   return;
                                 }
 
-                                final amount =
-                                    double.parse(_amountController.text.trim());
+                                final amount = resolvedAmount;
                                 if (isEditing) {
                                   store.updateRecord(
                                     recordId: widget.expense!.id,
@@ -348,20 +357,9 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
       return;
     }
 
-    final pickedTime = await showTimePicker(
-      context: context,
+    final pickedTime = await _showTimeInputDialog(
+      context,
       initialTime: TimeOfDay.fromDateTime(_selectedDateTime),
-      initialEntryMode: TimePickerEntryMode.inputOnly,
-      helpText: '选择时间',
-      cancelText: '取消',
-      confirmText: '确定',
-      builder: (context, child) {
-        return Localizations.override(
-          context: context,
-          locale: const Locale('zh', 'CN'),
-          child: child,
-        );
-      },
     );
     if (pickedTime == null) {
       return;
@@ -385,6 +383,192 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
     final hh = value.hour.toString().padLeft(2, '0');
     final mm = value.minute.toString().padLeft(2, '0');
     return '$hh:$mm';
+  }
+
+  double? _applyAmountExpression({bool silent = false}) {
+    final amount = _tryParseAmountExpression(_amountController.text);
+    if (amount == null || amount <= 0) {
+      if (!silent && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('金额算式无效')),
+        );
+      }
+      return null;
+    }
+
+    final formatted = _formatAmountInput(amount);
+    _amountController.value = _amountController.value.copyWith(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+      composing: TextRange.empty,
+    );
+    return amount;
+  }
+
+  double? _tryParseAmountExpression(String raw) {
+    final normalized = raw
+        .trim()
+        .replaceAll(' ', '')
+        .replaceAll('×', '*')
+        .replaceAll('x', '*')
+        .replaceAll('X', '*')
+        .replaceAll('÷', '/')
+        .replaceAll('，', ',');
+    if (normalized.isEmpty) {
+      return null;
+    }
+
+    final parser = _AmountExpressionParser(normalized);
+    final value = parser.parse();
+    if (value == null || value.isNaN || value.isInfinite) {
+      return null;
+    }
+    return value;
+  }
+
+  String _formatAmountInput(double value) {
+    return value
+        .toStringAsFixed(3)
+        .replaceAll(RegExp(r'0*$'), '')
+        .replaceAll(RegExp(r'\.$'), '');
+  }
+
+  Future<TimeOfDay?> _showTimeInputDialog(
+    BuildContext context, {
+    required TimeOfDay initialTime,
+  }) async {
+    final hourController = TextEditingController(
+      text: initialTime.hour.toString().padLeft(2, '0'),
+    );
+    final minuteController = TextEditingController(
+      text: initialTime.minute.toString().padLeft(2, '0'),
+    );
+    final hourFocusNode = FocusNode();
+    final minuteFocusNode = FocusNode();
+
+    void selectAll(TextEditingController controller) {
+      controller.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: controller.text.length,
+      );
+    }
+
+    hourFocusNode.addListener(() {
+      if (hourFocusNode.hasFocus) {
+        selectAll(hourController);
+      }
+    });
+    minuteFocusNode.addListener(() {
+      if (minuteFocusNode.hasFocus) {
+        selectAll(minuteController);
+      }
+    });
+
+    void maybeAdvanceToMinute(String value) {
+      final hour = int.tryParse(value);
+      if (hour == null) {
+        return;
+      }
+
+      final shouldAdvance =
+          value.length >= 2 || (value.length == 1 && hour >= 3);
+      if (shouldAdvance && !minuteFocusNode.hasFocus) {
+        minuteFocusNode.requestFocus();
+      }
+    }
+
+    final result = await showDialog<TimeOfDay>(
+      context: context,
+      builder: (dialogContext) {
+        String? errorText;
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('设置时间'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _TimeNumberField(
+                          controller: hourController,
+                          focusNode: hourFocusNode,
+                          label: '小时',
+                          onChanged: maybeAdvanceToMinute,
+                          onSubmitted: (_) {
+                            minuteFocusNode.requestFocus();
+                          },
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          ':',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                      ),
+                      Expanded(
+                        child: _TimeNumberField(
+                          controller: minuteController,
+                          focusNode: minuteFocusNode,
+                          label: '分钟',
+                          onChanged: (_) {},
+                          onSubmitted: (_) {},
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (errorText != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      errorText!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final hour = int.tryParse(hourController.text);
+                    final minute = int.tryParse(minuteController.text);
+                    if (hour == null ||
+                        minute == null ||
+                        hour < 0 ||
+                        hour > 23 ||
+                        minute < 0 ||
+                        minute > 59) {
+                      setState(() {
+                        errorText = '请输入有效时间，小时 0-23，分钟 0-59';
+                      });
+                      return;
+                    }
+                    Navigator.of(dialogContext).pop(
+                      TimeOfDay(hour: hour, minute: minute),
+                    );
+                  },
+                  child: const Text('确定'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    hourController.dispose();
+    minuteController.dispose();
+    hourFocusNode.dispose();
+    minuteFocusNode.dispose();
+    return result;
   }
 
   Future<void> _confirmDelete(
@@ -413,5 +597,200 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
       store.deleteRecord(widget.expense!.id);
       Navigator.of(context).pop();
     }
+  }
+}
+
+class _TimeNumberField extends StatelessWidget {
+  const _TimeNumberField({
+    required this.controller,
+    required this.focusNode,
+    required this.label,
+    required this.onChanged,
+    required this.onSubmitted,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String label;
+  final ValueChanged<String> onChanged;
+  final ValueChanged<String> onSubmitted;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      focusNode: focusNode,
+      autofocus: label == '小时',
+      keyboardType: TextInputType.number,
+      textAlign: TextAlign.center,
+      decoration: InputDecoration(
+        labelText: label,
+        counterText: '',
+      ),
+      maxLength: 2,
+      inputFormatters: [
+        FilteringTextInputFormatter.digitsOnly,
+        LengthLimitingTextInputFormatter(2),
+      ],
+      onTap: () {
+        controller.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: controller.text.length,
+        );
+      },
+      onChanged: onChanged,
+      onSubmitted: onSubmitted,
+    );
+  }
+}
+
+class _AmountExpressionParser {
+  _AmountExpressionParser(this.input);
+
+  final String input;
+  int _index = 0;
+
+  double? parse() {
+    final value = _parseExpression();
+    if (value == null) {
+      return null;
+    }
+    _skipSeparators();
+    if (_index != input.length) {
+      return null;
+    }
+    return value;
+  }
+
+  double? _parseExpression() {
+    var value = _parseTerm();
+    if (value == null) {
+      return null;
+    }
+
+    while (true) {
+      _skipSeparators();
+      final operator = _peek();
+      if (operator != '+' && operator != '-') {
+        return value;
+      }
+      _index++;
+      final rhs = _parseTerm();
+      if (rhs == null) {
+        return null;
+      }
+      final current = value;
+      if (current == null) {
+        return null;
+      }
+      value = operator == '+' ? current + rhs : current - rhs;
+    }
+  }
+
+  double? _parseTerm() {
+    var value = _parseFactor();
+    if (value == null) {
+      return null;
+    }
+
+    while (true) {
+      _skipSeparators();
+      final operator = _peek();
+      if (operator != '*' && operator != '/') {
+        return value;
+      }
+      _index++;
+      final rhs = _parseFactor();
+      if (rhs == null) {
+        return null;
+      }
+      final current = value;
+      if (current == null) {
+        return null;
+      }
+      if (operator == '*') {
+        value = current * rhs;
+      } else {
+        if (rhs == 0) {
+          return null;
+        }
+        value = current / rhs;
+      }
+    }
+  }
+
+  double? _parseFactor() {
+    _skipSeparators();
+    final char = _peek();
+    if (char == null) {
+      return null;
+    }
+
+    if (char == '+') {
+      _index++;
+      return _parseFactor();
+    }
+    if (char == '-') {
+      _index++;
+      final value = _parseFactor();
+      return value == null ? null : -value;
+    }
+    if (char == '(') {
+      _index++;
+      final value = _parseExpression();
+      _skipSeparators();
+      if (value == null || _peek() != ')') {
+        return null;
+      }
+      _index++;
+      return value;
+    }
+    return _parseNumber();
+  }
+
+  double? _parseNumber() {
+    _skipSeparators();
+    final start = _index;
+    var sawDigit = false;
+    var sawDot = false;
+
+    while (_index < input.length) {
+      final char = input[_index];
+      if (_isDigit(char)) {
+        sawDigit = true;
+        _index++;
+        continue;
+      }
+      if (char == '.' && !sawDot) {
+        sawDot = true;
+        _index++;
+        continue;
+      }
+      break;
+    }
+
+    if (!sawDigit) {
+      return null;
+    }
+    return double.tryParse(input.substring(start, _index));
+  }
+
+  void _skipSeparators() {
+    while (_index < input.length &&
+        (input[_index] == ' ' || input[_index] == ',')) {
+      _index++;
+    }
+  }
+
+  String? _peek() {
+    if (_index >= input.length) {
+      return null;
+    }
+    return input[_index];
+  }
+
+  bool _isDigit(String value) {
+    final unit = value.codeUnitAt(0);
+    return unit >= 48 && unit <= 57;
   }
 }

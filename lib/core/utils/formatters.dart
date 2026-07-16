@@ -440,6 +440,14 @@ String formatDayLabel(DateTime date) {
   return '${date.month} 月 ${date.day} 日';
 }
 
+String formatDayLabelWithWeekday(DateTime date) {
+  final label = formatDayLabel(date);
+  if (label == '今天' || label == '昨天') {
+    return label;
+  }
+  return '$label · 星期${weekdayLabel(date.weekday)}';
+}
+
 String weekdayLabel(int weekday) {
   const values = ['一', '二', '三', '四', '五', '六', '日'];
   return values[(weekday - 1).clamp(0, 6)];
