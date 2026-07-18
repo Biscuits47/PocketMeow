@@ -319,7 +319,7 @@ class _AutoBookkeepingPageState extends State<_AutoBookkeepingPage>
             title: const Text('无障碍服务权限'),
             subtitle: Text(
               _accGranted
-                  ? '已授权'
+                  ? '已授权。若 HyperOS 重启 App 后偶发不工作，可先点下方“重新同步自动记账引擎”；若仍无效，再去系统无障碍页手动关闭后重新打开一次。'
                   : '未授权，点击去开启。HyperOS / Android 13+ 若提示未知来源或受限设置，请先到应用信息里允许受限设置。',
             ),
             trailing: _accGranted
@@ -334,6 +334,23 @@ class _AutoBookkeepingPageState extends State<_AutoBookkeepingPage>
                 await widget.store.refreshAutoBookkeepingListening();
               }
             },
+          ),
+          const SizedBox(height: 8),
+          FilledButton.tonalIcon(
+            onPressed: () async {
+              await widget.store.refreshAutoBookkeepingListening();
+              await _checkPermissions();
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    '已重新同步自动记账引擎；如果 HyperOS 仍显示已开但无记录，请去系统无障碍页手动关闭后重新打开一次。',
+                  ),
+                ),
+              );
+            },
+            icon: const Icon(Icons.sync_rounded),
+            label: const Text('重新同步自动记账引擎'),
           ),
           const SizedBox(height: 24),
           Container(

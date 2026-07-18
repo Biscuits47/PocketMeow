@@ -11,9 +11,6 @@ import '../add_expense/add_expense_sheet.dart';
 import '../records/records_page.dart';
 import '../settings/settings_page.dart';
 
-const double _kPieOtherThreshold = 0.045;
-const int _kPieMaxVisibleLabels = 9;
-
 class DataPage extends StatefulWidget {
   const DataPage({super.key});
 
@@ -214,7 +211,7 @@ class _SpendingDistributionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final items = store.categoryDataForType(type);
+    final items = store.categoryDataForType(type).toList();
     final total =
         type == RecordType.expense ? store.monthSpent : store.monthIncome;
     final periodName = store.reportType == ReportType.yearly
@@ -226,9 +223,7 @@ class _SpendingDistributionCard extends StatelessWidget {
     List<CategorySpendData> otherItems = [];
 
     for (final item in items) {
-      final share = total > 0 ? item.amount / total : 0.0;
-      if (share < _kPieOtherThreshold ||
-          pieItems.length >= _kPieMaxVisibleLabels) {
+      if (total > 0 && (item.amount / total) < 0.10) {
         otherItems.add(item);
       } else {
         pieItems.add(item);
@@ -286,32 +281,11 @@ class _SpendingDistributionCard extends StatelessWidget {
               Column(
                 children: [
                   SizedBox(
-                    height: 220,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        PieChart(
-                          PieChartData(
-                            startDegreeOffset: -90,
-                            centerSpaceRadius: 44,
-                            sectionsSpace: 2,
-                            sections: pieItems.map(
-                              (item) {
-                                return PieChartSectionData(
-                                  color: Color(item.category.colorValue),
-                                  value: item.amount,
-                                  radius: 36,
-                                  title: '',
-                                );
-                              },
-                            ).toList(),
-                          ),
-                        ),
-                        _PieChartLabelOverlay(
-                          items: pieItems,
-                          total: total,
-                        ),
-                      ],
+                    height: 240,
+                    child: _PieDistributionChart(
+                      items: pieItems,
+                      total: total,
+                      typeName: typeName,
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -421,6 +395,224 @@ class _SpendingDistributionCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PieDistributionChart extends StatelessWidget {
+  const _PieDistributionChart({
+    required this.items,
+    required this.total,
+    required this.typeName,
+  });
+
+  final List<CategorySpendData> items;
+  final double total;
+  final String typeName;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final labelEntries = _buildPieLabelEntries(items, total);
+    final leftEntries = labelEntries
+        .where((entry) => !entry.isRightSide)
+        .toList()
+      ..sort((a, b) => a.yPosition.compareTo(b.yPosition));
+    final rightEntries = labelEntries
+        .where((entry) => entry.isRightSide)
+        .toList()
+      ..sort((a, b) => a.yPosition.compareTo(b.yPosition));
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final chartSize = min(168.0, max(140.0, constraints.maxWidth * 0.38));
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: _PieLabelColumn(
+                entries: leftEntries,
+                alignRight: true,
+              ),
+            ),
+            SizedBox(
+              width: chartSize,
+              height: chartSize,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  PieChart(
+                    PieChartData(
+                      startDegreeOffset: -90,
+                      centerSpaceRadius: chartSize * 0.34,
+                      sectionsSpace: 2,
+                      sections: items
+                          .map(
+                            (item) => PieChartSectionData(
+                              color: Color(item.category.colorValue),
+                              value: item.amount,
+                              radius: chartSize * 0.28,
+                              title: '',
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        typeName,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: AppTheme.muted,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        formatChartAmount(total),
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: _PieLabelColumn(
+                entries: rightEntries,
+                alignRight: false,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _PieLabelColumn extends StatelessWidget {
+  const _PieLabelColumn({
+    required this.entries,
+    required this.alignRight,
+  });
+
+  final List<_PieLabelEntry> entries;
+  final bool alignRight;
+
+  @override
+  Widget build(BuildContext context) {
+    if (entries.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      crossAxisAlignment:
+          alignRight ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: entries
+          .map(
+            (entry) => _PieLabelTile(
+              entry: entry,
+              alignRight: alignRight,
+            ),
+          )
+          .toList(),
+    );
+  }
+}
+
+class _PieLabelTile extends StatelessWidget {
+  const _PieLabelTile({
+    required this.entry,
+    required this.alignRight,
+  });
+
+  final _PieLabelEntry entry;
+  final bool alignRight;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final line = Container(
+      width: 18,
+      height: 2,
+      decoration: BoxDecoration(
+        color: entry.color,
+        borderRadius: BorderRadius.circular(999),
+      ),
+    );
+    final text = Flexible(
+      child: Text(
+        '${entry.item.category.name} ${entry.percentText}%',
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        textAlign: alignRight ? TextAlign.right : TextAlign.left,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: const Color(0xFF5E656B),
+          height: 1.25,
+        ),
+      ),
+    );
+
+    return Row(
+      mainAxisAlignment:
+          alignRight ? MainAxisAlignment.end : MainAxisAlignment.start,
+      children: alignRight
+          ? [text, const SizedBox(width: 8), line]
+          : [line, const SizedBox(width: 8), text],
+    );
+  }
+}
+
+List<_PieLabelEntry> _buildPieLabelEntries(
+  List<CategorySpendData> items,
+  double total,
+) {
+  var currentAngle = -90.0;
+  final entries = <_PieLabelEntry>[];
+
+  for (final item in items) {
+    final share = item.shareOf(total);
+    final angle = share * 360.0;
+    final midAngle = currentAngle + angle / 2;
+    final radians = midAngle * (pi / 180.0);
+    entries.add(
+      _PieLabelEntry(
+        item: item,
+        color: Color(item.category.colorValue),
+        percentText: _formatPieLabelPercent(share),
+        isRightSide: cos(radians) >= 0,
+        yPosition: sin(radians),
+      ),
+    );
+    currentAngle += angle;
+  }
+
+  return entries;
+}
+
+String _formatPieLabelPercent(double value) {
+  final percent = value * 100;
+  if (percent >= 10) {
+    return percent.toStringAsFixed(1);
+  }
+  return percent.toStringAsFixed(2);
+}
+
+class _PieLabelEntry {
+  const _PieLabelEntry({
+    required this.item,
+    required this.color,
+    required this.percentText,
+    required this.isRightSide,
+    required this.yPosition,
+  });
+
+  final CategorySpendData item;
+  final Color color;
+  final String percentText;
+  final bool isRightSide;
+  final double yPosition;
 }
 
 class _TrendCard extends StatefulWidget {
@@ -1204,224 +1396,4 @@ class _CategoryRecordsSheetState extends State<_CategoryRecordsSheet> {
       },
     );
   }
-}
-
-class _PieChartLabelOverlay extends StatelessWidget {
-  const _PieChartLabelOverlay({
-    required this.items,
-    required this.total,
-  });
-
-  final List<CategorySpendData> items;
-  final double total;
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _PieChartLabelPainter(
-        items: items,
-        total: total,
-      ),
-      child: const SizedBox.expand(),
-    );
-  }
-}
-
-class _PieChartLabelPainter extends CustomPainter {
-  _PieChartLabelPainter({
-    required this.items,
-    required this.total,
-  });
-
-  final List<CategorySpendData> items;
-  final double total;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (items.isEmpty || total <= 0) return;
-
-    final center = Offset(size.width / 2, size.height / 2);
-    const pieOuterRadius = 80.0; // centerSpaceRadius(44) + radius(36)
-    const line1Length = 10.0;
-    const labelInset = 8.0;
-    const horizontalInset = 20.0;
-    const labelGap = 8.0;
-    const maxLabelWidth = 112.0;
-
-    double currentAngle = -90.0;
-    final leftEntries = <_PieLabelLayoutEntry>[];
-    final rightEntries = <_PieLabelLayoutEntry>[];
-
-    for (final item in items) {
-      final percentage = item.amount / total;
-      final angle = percentage * 360.0;
-      final midAngle = currentAngle + angle / 2;
-
-      final radians = midAngle * (pi / 180.0);
-      final x1 = center.dx + pieOuterRadius * cos(radians);
-      final y1 = center.dy + pieOuterRadius * sin(radians);
-      final x2 = center.dx + (pieOuterRadius + line1Length) * cos(radians);
-      final y2 = center.dy + (pieOuterRadius + line1Length) * sin(radians);
-      final isRightSide = cos(radians) >= 0;
-
-      final percentStr = _formatPieLabelPercent(percentage);
-      final labelText = '${item.category.name} $percentStr%';
-
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: labelText,
-          style: const TextStyle(
-            color: Color(0xFF5E656B),
-            fontSize: 11,
-            fontWeight: FontWeight.w400,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      );
-      textPainter.layout(maxWidth: maxLabelWidth);
-
-      final entry = _PieLabelLayoutEntry(
-        color: Color(item.category.colorValue),
-        painter: textPainter,
-        anchor: Offset(x1, y1),
-        bend: Offset(x2, y2),
-        targetCenterY: y2,
-      );
-      if (isRightSide) {
-        rightEntries.add(entry);
-      } else {
-        leftEntries.add(entry);
-      }
-
-      currentAngle += angle;
-    }
-
-    _layoutPieLabels(
-      canvas: canvas,
-      size: size,
-      entries: rightEntries,
-      isRightSide: true,
-      labelInset: labelInset,
-      horizontalInset: horizontalInset,
-      labelGap: labelGap,
-    );
-    _layoutPieLabels(
-      canvas: canvas,
-      size: size,
-      entries: leftEntries,
-      isRightSide: false,
-      labelInset: labelInset,
-      horizontalInset: horizontalInset,
-      labelGap: labelGap,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_PieChartLabelPainter oldDelegate) {
-    return items != oldDelegate.items || total != oldDelegate.total;
-  }
-}
-
-String _formatPieLabelPercent(double value) {
-  final percent = value * 100;
-  if (percent >= 10) {
-    return percent.toStringAsFixed(1);
-  }
-  return percent.toStringAsFixed(2);
-}
-
-void _layoutPieLabels({
-  required Canvas canvas,
-  required Size size,
-  required List<_PieLabelLayoutEntry> entries,
-  required bool isRightSide,
-  required double labelInset,
-  required double horizontalInset,
-  required double labelGap,
-}) {
-  if (entries.isEmpty) {
-    return;
-  }
-
-  entries.sort((a, b) => a.targetCenterY.compareTo(b.targetCenterY));
-  final minTop = labelInset;
-  final maxBottom = size.height - labelInset;
-
-  for (var index = 0; index < entries.length; index++) {
-    final entry = entries[index];
-    final desiredTop = entry.targetCenterY - entry.height / 2;
-    if (index == 0) {
-      entry.top = max(minTop, desiredTop);
-    } else {
-      final previous = entries[index - 1];
-      entry.top = max(
-        previous.top + previous.height + labelGap,
-        desiredTop,
-      );
-    }
-  }
-
-  final overflow = entries.last.top + entries.last.height - maxBottom;
-  if (overflow > 0) {
-    entries.last.top -= overflow;
-    for (var index = entries.length - 2; index >= 0; index--) {
-      final next = entries[index + 1];
-      entries[index].top = min(
-        entries[index].top,
-        next.top - entries[index].height - labelGap,
-      );
-    }
-  }
-
-  if (entries.first.top < minTop) {
-    final shift = minTop - entries.first.top;
-    for (final entry in entries) {
-      entry.top += shift;
-    }
-  }
-
-  for (final entry in entries) {
-    final labelX = isRightSide
-        ? size.width - entry.width - horizontalInset
-        : horizontalInset;
-    final labelY = entry.top.clamp(
-      minTop,
-      maxBottom - entry.height,
-    );
-    final connectorX = isRightSide ? labelX - 4 : labelX + entry.width + 4;
-    final connectorY = labelY + entry.height / 2;
-
-    final linePaint = Paint()
-      ..color = entry.color
-      ..strokeWidth = 1.0
-      ..style = PaintingStyle.stroke;
-
-    final path = Path()
-      ..moveTo(entry.anchor.dx, entry.anchor.dy)
-      ..lineTo(entry.bend.dx, connectorY)
-      ..lineTo(connectorX, connectorY);
-
-    canvas.drawPath(path, linePaint);
-    entry.painter.paint(canvas, Offset(labelX, labelY));
-  }
-}
-
-class _PieLabelLayoutEntry {
-  _PieLabelLayoutEntry({
-    required this.color,
-    required this.painter,
-    required this.anchor,
-    required this.bend,
-    required this.targetCenterY,
-  });
-
-  final Color color;
-  final TextPainter painter;
-  final Offset anchor;
-  final Offset bend;
-  final double targetCenterY;
-  double top = 0;
-
-  double get width => painter.width;
-  double get height => painter.height;
 }

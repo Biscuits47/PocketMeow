@@ -13,28 +13,45 @@ class AutoBookkeepingService {
   AutoBookkeepingService(this._store);
   static const MethodChannel _notificationMethodChannel =
       MethodChannel('x-slayer/notifications_channel');
+  static const Duration _duplicateWindow = Duration(seconds: 60);
+  static const Duration _recentCacheWindow = Duration(minutes: 2);
+  static const List<Duration> _warmUpRetryDelays = [
+    Duration(milliseconds: 900),
+    Duration(seconds: 3),
+    Duration(seconds: 7),
+  ];
+  static bool get _supportsAutoBookkeepingPlatform =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   final PocketMeowStore _store;
 
   StreamSubscription? _notificationSub;
   StreamSubscription? _accessibilitySub;
+  final List<Timer> _warmUpRetryTimers = [];
 
-  // Deduplication cache: "amount_note" -> timestamp
-  final Map<String, DateTime> _recentTransactions = {};
+  final List<_CapturedTransactionSignature> _recentTransactions = [];
   final Map<String, DateTime> _lastSnapshotTimes = {};
   final Map<String, String> _lastSnapshotKeys = {};
 
   bool _isListening = false;
+  int _startSessionToken = 0;
   bool get isListening => _isListening;
 
-  Future<void> startListening() async {
-    final notifGranted =
-        await NotificationListenerService.isPermissionGranted();
-    final accGranted =
-        await FlutterAccessibilityService.isAccessibilityPermissionEnabled();
+  Future<void> startListening({
+    bool forceRestart = false,
+    bool scheduleWarmUp = true,
+  }) async {
+    if (!_supportsAutoBookkeepingPlatform) {
+      stopListening();
+      return;
+    }
+
+    final notifGranted = await _safeNotificationPermissionGranted();
+    final accGranted = await _safeAccessibilityPermissionEnabled();
     final hasNotificationSub = _notificationSub != null;
     final hasAccessibilitySub = _accessibilitySub != null;
-    if (_isListening &&
+    if (!forceRestart &&
+        _isListening &&
         hasNotificationSub == notifGranted &&
         hasAccessibilitySub == accGranted) {
       return;
@@ -68,8 +85,14 @@ class AutoBookkeepingService {
     }
 
     _isListening = hasSubscription;
+    _cancelWarmUpRetries();
     if (!_isListening) {
       debugPrint('AutoBookkeeping: permissions missing, listener not started');
+      return;
+    }
+
+    if (scheduleWarmUp) {
+      _scheduleWarmUpRetries();
     }
   }
 
@@ -79,10 +102,13 @@ class AutoBookkeepingService {
   }
 
   Future<void> syncListeningWithPermissions() async {
-    final notifGranted =
-        await NotificationListenerService.isPermissionGranted();
-    final accGranted =
-        await FlutterAccessibilityService.isAccessibilityPermissionEnabled();
+    if (!_supportsAutoBookkeepingPlatform) {
+      stopListening();
+      return;
+    }
+
+    final notifGranted = await _safeNotificationPermissionGranted();
+    final accGranted = await _safeAccessibilityPermissionEnabled();
 
     if (!notifGranted && !accGranted) {
       stopListening();
@@ -93,6 +119,7 @@ class AutoBookkeepingService {
   }
 
   void stopListening() {
+    _cancelWarmUpRetries();
     _notificationSub?.cancel();
     _accessibilitySub?.cancel();
     _notificationSub = null;
@@ -103,6 +130,7 @@ class AutoBookkeepingService {
   }
 
   void _onNotification(ServiceNotificationEvent event) {
+    _startSessionToken++;
     final pkg = event.packageName;
     final title = event.title;
     final content = event.content;
@@ -116,6 +144,7 @@ class AutoBookkeepingService {
 
   void _onAccessibilityEvent(AccessibilityEvent event) {
     if (event.packageName == null || event.text == null) return;
+    _startSessionToken++;
 
     final pkg = event.packageName!;
     final text = _normalizeAccessibilityText(event.text!) ?? event.text!;
@@ -340,6 +369,9 @@ class AutoBookkeepingService {
   }
 
   Future<void> _ensureNotificationListenerReady() async {
+    if (!_supportsAutoBookkeepingPlatform) {
+      return;
+    }
     try {
       final connected = await _notificationMethodChannel
               .invokeMethod<bool>('isServiceConnected') ??
@@ -355,6 +387,61 @@ class AutoBookkeepingService {
       debugPrint(
           'AutoBookkeeping: failed to ensure notification service: $error');
     }
+  }
+
+  Future<bool> _safeNotificationPermissionGranted() async {
+    try {
+      return await NotificationListenerService.isPermissionGranted();
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  Future<bool> _safeAccessibilityPermissionEnabled() async {
+    try {
+      return await FlutterAccessibilityService
+          .isAccessibilityPermissionEnabled();
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  void _scheduleWarmUpRetries() {
+    _cancelWarmUpRetries();
+    final token = ++_startSessionToken;
+    for (final delay in _warmUpRetryDelays) {
+      _warmUpRetryTimers.add(
+        Timer(delay, () async {
+          if (token != _startSessionToken ||
+              !_store.isAutoBookkeepingEnabled ||
+              !_supportsAutoBookkeepingPlatform) {
+            return;
+          }
+
+          final notifGranted = await _safeNotificationPermissionGranted();
+          final accGranted = await _safeAccessibilityPermissionEnabled();
+          if (!notifGranted && !accGranted) {
+            return;
+          }
+
+          await startListening(
+            forceRestart: true,
+            scheduleWarmUp: false,
+          );
+        }),
+      );
+    }
+  }
+
+  void _cancelWarmUpRetries() {
+    for (final timer in _warmUpRetryTimers) {
+      timer.cancel();
+    }
+    _warmUpRetryTimers.clear();
   }
 
   bool _containsPaymentKeyword(String text) {
@@ -715,22 +802,24 @@ class AutoBookkeepingService {
   void _addRecordIfUnique(double amount, String note, RecordType type,
       {DateTime? createdAt, RecordSource? source, String? categoryHint}) {
     final timeToUse = createdAt ?? DateTime.now();
-    final key = '${amount.toStringAsFixed(2)}_$note';
+    _cleanupRecentTransactions(timeToUse);
 
-    // Cleanup old cache (> 2 mins)
-    _recentTransactions
-        .removeWhere((k, v) => timeToUse.difference(v).inMinutes > 2);
+    final signature = _CapturedTransactionSignature(
+      amount: amount,
+      note: note,
+      type: type,
+      source: source,
+      createdAt: timeToUse,
+    );
 
-    // Deduplication check
-    if (_recentTransactions.containsKey(key)) {
-      final lastTime = _recentTransactions[key]!;
-      if (timeToUse.difference(lastTime).inSeconds < 60) {
-        debugPrint('AutoBookkeeping: Ignored duplicate transaction $key');
-        return; // Ignore if within 60 seconds
-      }
+    if (_hasRecentMemoryDuplicate(signature) ||
+        _hasStoredDuplicate(signature)) {
+      debugPrint(
+          'AutoBookkeeping: Ignored duplicate transaction ${signature.debugKey}');
+      return;
     }
 
-    _recentTransactions[key] = timeToUse;
+    _recentTransactions.add(signature);
 
     final categoryId = BillCategoryMapper.inferCategoryId(
         note, categoryHint ?? '', type, _store);
@@ -745,6 +834,101 @@ class AutoBookkeepingService {
     );
 
     debugPrint('AutoBookkeeping: Added $type $amount $note');
+  }
+
+  void _cleanupRecentTransactions(DateTime now) {
+    _recentTransactions.removeWhere(
+      (item) => now.difference(item.createdAt) > _recentCacheWindow,
+    );
+  }
+
+  bool _hasRecentMemoryDuplicate(_CapturedTransactionSignature current) {
+    for (final existing in _recentTransactions) {
+      if (_isLikelyDuplicate(existing, current)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _hasStoredDuplicate(_CapturedTransactionSignature current) {
+    for (final record in _store.records) {
+      if (record.source != current.source || record.type != current.type) {
+        continue;
+      }
+      if ((record.amount - current.amount).abs() > 0.009) {
+        continue;
+      }
+      final diff = record.createdAt.difference(current.createdAt).abs();
+      if (diff > _duplicateWindow) {
+        continue;
+      }
+      final existing = _CapturedTransactionSignature(
+        amount: record.amount,
+        note: record.note,
+        type: record.type,
+        source: record.source,
+        createdAt: record.createdAt,
+      );
+      if (_isLikelyDuplicate(existing, current)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _isLikelyDuplicate(
+    _CapturedTransactionSignature existing,
+    _CapturedTransactionSignature current,
+  ) {
+    if (existing.type != current.type || existing.source != current.source) {
+      return false;
+    }
+    if ((existing.amount - current.amount).abs() > 0.009) {
+      return false;
+    }
+    final diff = existing.createdAt.difference(current.createdAt).abs();
+    if (diff > _duplicateWindow) {
+      return false;
+    }
+
+    final existingNote = _normalizeDedupNote(existing.note);
+    final currentNote = _normalizeDedupNote(current.note);
+    if (existingNote == currentNote) {
+      return true;
+    }
+    if (_isGenericAutoNote(existing.note) || _isGenericAutoNote(current.note)) {
+      return true;
+    }
+    if (existingNote.isEmpty || currentNote.isEmpty) {
+      return false;
+    }
+    return existingNote.contains(currentNote) ||
+        currentNote.contains(existingNote);
+  }
+
+  String _normalizeDedupNote(String note) {
+    final normalized = note
+        .trim()
+        .replaceAll(RegExp(r'\s+'), '')
+        .replaceAll(RegExp(r'[^\u4e00-\u9fa5A-Za-z0-9]'), '');
+    return normalized.toLowerCase();
+  }
+
+  bool _isGenericAutoNote(String note) {
+    const genericNotes = {
+      '微信支付',
+      '微信收款',
+      '支付宝支付',
+      '支付宝收款',
+      '微信通知',
+      '支付宝通知',
+      '微信历史账单',
+      '支付宝历史账单',
+      '微信',
+      '支付宝',
+    };
+    return genericNotes.contains(note.trim());
   }
 
   _AmountCandidate? _extractDetailAmountCandidate(
@@ -883,4 +1067,23 @@ class _NotificationMatch {
 
   final double amount;
   final RecordType type;
+}
+
+class _CapturedTransactionSignature {
+  const _CapturedTransactionSignature({
+    required this.amount,
+    required this.note,
+    required this.type,
+    required this.source,
+    required this.createdAt,
+  });
+
+  final double amount;
+  final String note;
+  final RecordType type;
+  final RecordSource? source;
+  final DateTime createdAt;
+
+  String get debugKey =>
+      '${source?.key ?? 'unknown'}|${type.key}|${amount.toStringAsFixed(2)}|$note';
 }
