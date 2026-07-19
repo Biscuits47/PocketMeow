@@ -910,60 +910,153 @@ Future<void> _importData(BuildContext context, PocketMeowStore store) async {
   }
 }
 
-Future<void> _checkForUpdates(BuildContext context) async {
-  _showLoadingDialog(context, message: '正在检查远端版本清单...');
+Future<void> checkForUpdatesAndPrompt(
+  BuildContext context, {
+  bool showProgressDialog = false,
+  bool showLatestDialog = false,
+  bool showErrors = false,
+  bool respectIgnoredRelease = false,
+}) async {
+  if (showProgressDialog) {
+    _showLoadingDialog(context, message: '正在检查远端版本清单...');
+  }
   try {
     final info = await _appUpdateService.checkForUpdate();
     if (!context.mounted) {
       return;
     }
-    Navigator.of(context, rootNavigator: true).pop();
-    await showDialog<void>(
-      context: context,
-      builder: (context) {
-        final releaseNotes =
-            info.releaseNotes.isEmpty ? '这次更新暂未填写说明。' : info.releaseNotes;
-        final downloadLabel = info.downloadUrl == null ? '查看详情' : '下载更新';
-        return AlertDialog(
-          title: Text(info.hasUpdate ? '发现新版本' : '已经是最新版本'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('当前版本：${info.currentVersion}'),
+    if (showProgressDialog) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+
+    final isIgnored = await _appUpdateService.isIgnoredRelease(info);
+    if (!context.mounted) {
+      return;
+    }
+    if (info.hasUpdate && respectIgnoredRelease && isIgnored) {
+      return;
+    }
+    if (!info.hasUpdate && !showLatestDialog) {
+      return;
+    }
+
+    await _showUpdateResultDialog(
+      context,
+      info,
+      isIgnored: isIgnored,
+    );
+  } catch (error) {
+    if (!context.mounted) {
+      return;
+    }
+    if (showProgressDialog) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+    if (showErrors) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('检查更新失败：$error')),
+      );
+    }
+  }
+}
+
+Future<void> _checkForUpdates(BuildContext context) {
+  return checkForUpdatesAndPrompt(
+    context,
+    showProgressDialog: true,
+    showLatestDialog: true,
+    showErrors: true,
+  );
+}
+
+Future<void> _showUpdateResultDialog(
+  BuildContext context,
+  AppUpdateInfo info, {
+  required bool isIgnored,
+}) {
+  final releaseNotes =
+      info.releaseNotes.isEmpty ? '这次更新暂未填写说明。' : info.releaseNotes;
+  final downloadLabel = info.downloadUrl == null ? '查看详情' : '下载更新';
+  final hasDownloadableApk =
+      info.downloadUrl != null && info.downloadUrl!.endsWith('.apk');
+  return showDialog<void>(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+        title: Text(
+          info.hasUpdate ? (isIgnored ? '发现新版本（已忽略提醒）' : '发现新版本') : '已经是最新版本',
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('当前版本：${info.currentVersion}'),
+              const SizedBox(height: 6),
+              Text('最新版本：${info.latestVersion}'),
+              if (info.publishedAt != null) ...[
                 const SizedBox(height: 6),
-                Text('最新版本：${info.latestVersion}'),
-                if (info.publishedAt != null) ...[
-                  const SizedBox(height: 6),
-                  Text('发布时间：${_formatUpdateTime(info.publishedAt!)}'),
-                ],
-                const SizedBox(height: 14),
-                Text(
-                  info.hasUpdate
-                      ? '检测到新版本，可以直接从版本清单里的下载地址获取最新 APK。'
-                      : '当前安装版本已经不低于版本清单中的最新版本。',
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  '更新说明',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                Text(releaseNotes),
+                Text('发布时间：${_formatUpdateTime(info.publishedAt!)}'),
               ],
-            ),
+              const SizedBox(height: 14),
+              Text(
+                info.hasUpdate
+                    ? '检测到新版本，可以直接从版本清单里的下载地址获取最新 APK。'
+                    : '当前安装版本已经不低于版本清单中的最新版本。',
+              ),
+              if (info.hasUpdate && isIgnored) ...[
+                const SizedBox(height: 10),
+                const Text('这个版本的启动提醒已被忽略，但你仍然可以在这里手动下载更新。'),
+              ],
+              if (info.hasUpdate && !hasDownloadableApk) ...[
+                const SizedBox(height: 10),
+                const Text('当前版本清单里没有直接 APK 下载地址，将为你打开发布详情页。'),
+              ],
+              const SizedBox(height: 14),
+              Text(
+                '更新说明',
+                style: Theme.of(dialogContext).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Text(releaseNotes),
+            ],
           ),
-          actions: [
+        ),
+        actions: [
+          if (info.hasUpdate && !isIgnored)
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text(info.hasUpdate ? '稍后' : '关闭'),
+              onPressed: () async {
+                await _appUpdateService.ignoreRelease(info);
+                if (!dialogContext.mounted) {
+                  return;
+                }
+                Navigator.of(dialogContext).pop();
+                if (!context.mounted) {
+                  return;
+                }
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      '已忽略 v${info.latestVersion}，在下一个版本发布前不会再提醒。',
+                    ),
+                  ),
+                );
+              },
+              child: const Text('忽略本次'),
             ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(info.hasUpdate ? '稍后' : '关闭'),
+          ),
+          if (info.hasUpdate)
             FilledButton(
               onPressed: () async {
-                Navigator.of(context).pop();
-                if (info.downloadUrl != null &&
-                    info.downloadUrl!.endsWith('.apk')) {
+                await _appUpdateService.clearIgnoredRelease();
+                if (!dialogContext.mounted) {
+                  return;
+                }
+                Navigator.of(dialogContext).pop();
+                if (hasDownloadableApk) {
                   await _downloadAndInstallApk(context, info.downloadUrl!);
                 } else {
                   await _openReleaseDownload(context, info.detailsUrl);
@@ -971,19 +1064,10 @@ Future<void> _checkForUpdates(BuildContext context) async {
               },
               child: Text(downloadLabel),
             ),
-          ],
-        );
-      },
-    );
-  } catch (error) {
-    if (!context.mounted) {
-      return;
-    }
-    Navigator.of(context, rootNavigator: true).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('检查更新失败：$error')),
-    );
-  }
+        ],
+      );
+    },
+  );
 }
 
 void _showLoadingDialog(BuildContext context, {required String message}) {

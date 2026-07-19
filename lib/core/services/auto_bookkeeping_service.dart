@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
@@ -9,12 +11,58 @@ import 'bill_category_mapper.dart';
 import '../../app/state/pocket_meow_store.dart';
 import '../../data/models/app_models.dart';
 
+enum _AccessibilityTargetPage {
+  paymentSuccess,
+  billDetail,
+  billList,
+}
+
+void _reportAutoBookkeepingDebugEvent({
+  required String hypothesisId,
+  required String location,
+  required String message,
+  Map<String, Object?> data = const {},
+}) {
+  (() async {
+    var serverUrl = 'http://192.168.31.33:7777/event';
+    const sessionId = 'auto-bookkeeping-crash';
+    try {
+      final env = await File('.dbg/auto-bookkeeping-crash.env').readAsString();
+      for (final line in env.split('\n')) {
+        if (line.startsWith('DEBUG_SERVER_URL=')) {
+          serverUrl = line.substring('DEBUG_SERVER_URL='.length).trim();
+        }
+      }
+    } catch (_) {}
+    final client = HttpClient();
+    try {
+      final request = await client.postUrl(Uri.parse(serverUrl));
+      request.headers.contentType = ContentType.json;
+      request.write(jsonEncode({
+        'sessionId': sessionId,
+        'runId': 'post-fix',
+        'hypothesisId': hypothesisId,
+        'location': location,
+        'msg': '[DEBUG] $message',
+        'data': data,
+        'ts': DateTime.now().millisecondsSinceEpoch,
+      }));
+      final response = await request.close();
+      await response.drain<void>();
+    } catch (_) {
+    } finally {
+      client.close(force: true);
+    }
+  })();
+}
+
 class AutoBookkeepingService {
   AutoBookkeepingService(this._store);
   static const MethodChannel _notificationMethodChannel =
       MethodChannel('x-slayer/notifications_channel');
   static const Duration _duplicateWindow = Duration(seconds: 60);
   static const Duration _recentCacheWindow = Duration(minutes: 2);
+  static const Duration _detailEnrichmentWindow = Duration(hours: 12);
   static const List<Duration> _warmUpRetryDelays = [
     Duration(milliseconds: 900),
     Duration(seconds: 3),
@@ -41,6 +89,20 @@ class AutoBookkeepingService {
     bool forceRestart = false,
     bool scheduleWarmUp = true,
   }) async {
+    // #region debug-point A:start-listening-entry
+    _reportAutoBookkeepingDebugEvent(
+      hypothesisId: 'A',
+      location: 'auto_bookkeeping_service.dart:startListening',
+      message: 'startListening entered',
+      data: {
+        'forceRestart': forceRestart,
+        'scheduleWarmUp': scheduleWarmUp,
+        'isListening': _isListening,
+        'hasNotificationSub': _notificationSub != null,
+        'hasAccessibilitySub': _accessibilitySub != null,
+      },
+    );
+    // #endregion
     if (!_supportsAutoBookkeepingPlatform) {
       stopListening();
       return;
@@ -50,6 +112,19 @@ class AutoBookkeepingService {
     final accGranted = await _safeAccessibilityPermissionEnabled();
     final hasNotificationSub = _notificationSub != null;
     final hasAccessibilitySub = _accessibilitySub != null;
+    // #region debug-point A:start-listening-permissions
+    _reportAutoBookkeepingDebugEvent(
+      hypothesisId: 'A',
+      location: 'auto_bookkeeping_service.dart:startListening',
+      message: 'Resolved startListening permissions',
+      data: {
+        'notifGranted': notifGranted,
+        'accGranted': accGranted,
+        'hasNotificationSub': hasNotificationSub,
+        'hasAccessibilitySub': hasAccessibilitySub,
+      },
+    );
+    // #endregion
     if (!forceRestart &&
         _isListening &&
         hasNotificationSub == notifGranted &&
@@ -68,6 +143,18 @@ class AutoBookkeepingService {
       _notificationSub = NotificationListenerService.notificationsStream.listen(
         _onNotification,
         onError: (Object error, StackTrace stackTrace) {
+          // #region debug-point E:notification-stream-error
+          _reportAutoBookkeepingDebugEvent(
+            hypothesisId: 'E',
+            location:
+                'auto_bookkeeping_service.dart:notificationStream.onError',
+            message: 'Notification stream emitted error',
+            data: {
+              'error': error.toString(),
+              'stack': stackTrace.toString(),
+            },
+          );
+          // #endregion
           debugPrint('AutoBookkeeping: notification stream error: $error');
         },
       );
@@ -78,6 +165,18 @@ class AutoBookkeepingService {
       _accessibilitySub = FlutterAccessibilityService.accessStream.listen(
         _onAccessibilityEvent,
         onError: (Object error, StackTrace stackTrace) {
+          // #region debug-point E:accessibility-stream-error
+          _reportAutoBookkeepingDebugEvent(
+            hypothesisId: 'E',
+            location:
+                'auto_bookkeeping_service.dart:accessibilityStream.onError',
+            message: 'Accessibility stream emitted error',
+            data: {
+              'error': error.toString(),
+              'stack': stackTrace.toString(),
+            },
+          );
+          // #endregion
           debugPrint('AutoBookkeeping: accessibility stream error: $error');
         },
       );
@@ -86,6 +185,17 @@ class AutoBookkeepingService {
 
     _isListening = hasSubscription;
     _cancelWarmUpRetries();
+    // #region debug-point A:start-listening-result
+    _reportAutoBookkeepingDebugEvent(
+      hypothesisId: 'A',
+      location: 'auto_bookkeeping_service.dart:startListening',
+      message: 'startListening finished',
+      data: {
+        'isListening': _isListening,
+        'hasSubscription': hasSubscription,
+      },
+    );
+    // #endregion
     if (!_isListening) {
       debugPrint('AutoBookkeeping: permissions missing, listener not started');
       return;
@@ -98,10 +208,20 @@ class AutoBookkeepingService {
 
   Future<void> restartListening() async {
     stopListening();
-    await startListening();
+    await startListening(forceRestart: true);
   }
 
   Future<void> syncListeningWithPermissions() async {
+    // #region debug-point A:sync-listening-entry
+    _reportAutoBookkeepingDebugEvent(
+      hypothesisId: 'A',
+      location: 'auto_bookkeeping_service.dart:syncListeningWithPermissions',
+      message: 'syncListeningWithPermissions entered',
+      data: {
+        'isListening': _isListening,
+      },
+    );
+    // #endregion
     if (!_supportsAutoBookkeepingPlatform) {
       stopListening();
       return;
@@ -116,6 +236,18 @@ class AutoBookkeepingService {
     }
 
     await startListening();
+    // #region debug-point A:sync-listening-result
+    _reportAutoBookkeepingDebugEvent(
+      hypothesisId: 'A',
+      location: 'auto_bookkeeping_service.dart:syncListeningWithPermissions',
+      message: 'syncListeningWithPermissions finished',
+      data: {
+        'notifGranted': notifGranted,
+        'accGranted': accGranted,
+        'isListening': _isListening,
+      },
+    );
+    // #endregion
   }
 
   void stopListening() {
@@ -134,11 +266,27 @@ class AutoBookkeepingService {
     final pkg = event.packageName;
     final title = event.title;
     final content = event.content;
+    final createdAt = event.timestamp > 0
+        ? DateTime.fromMillisecondsSinceEpoch(event.timestamp)
+        : DateTime.now();
+    // #region debug-point C:notification-event
+    _reportAutoBookkeepingDebugEvent(
+      hypothesisId: 'C',
+      location: 'auto_bookkeeping_service.dart:_onNotification',
+      message: 'Received notification event',
+      data: {
+        'packageName': pkg,
+        'title': title,
+        'content': content,
+        'timestamp': createdAt.toIso8601String(),
+      },
+    );
+    // #endregion
 
     if (pkg.contains('com.tencent.mm')) {
-      _parseWeChat(title, content);
+      _parseWeChat(title, content, createdAt: createdAt);
     } else if (pkg.contains('com.eg.android.AlipayGphone')) {
-      _parseAlipay(title, content);
+      _parseAlipay(title, content, createdAt: createdAt);
     }
   }
 
@@ -152,8 +300,24 @@ class AutoBookkeepingService {
         !pkg.contains('com.eg.android.AlipayGphone')) {
       return;
     }
+    final targetPage = _detectAccessibilityTargetPage(pkg, text, event);
+    // #region debug-point B:accessibility-gate
+    _reportAutoBookkeepingDebugEvent(
+      hypothesisId: 'B',
+      location: 'auto_bookkeeping_service.dart:_onAccessibilityEvent',
+      message: 'Processed accessibility event gate',
+      data: {
+        'packageName': pkg,
+        'textPreview': text.length > 80 ? text.substring(0, 80) : text,
+        'targetPage': targetPage?.name,
+        'subNodeCount': event.subNodes?.length ?? 0,
+      },
+    );
+    // #endregion
+    if (targetPage == null) {
+      return;
+    }
 
-    // Extract all text from subNodes
     final List<String> allNodesText = [];
     void extractText(AccessibilityEvent e) {
       final rawText = e.text;
@@ -171,17 +335,26 @@ class AutoBookkeepingService {
 
     extractText(event);
     if (allNodesText.isEmpty) return;
-    if (!_shouldProcessAccessibilitySnapshot(pkg, text, allNodesText)) return;
+    if (!_shouldProcessAccessibilitySnapshot(
+      pkg,
+      '$targetPage|$text',
+      allNodesText,
+    )) {
+      return;
+    }
 
-    // Accessibility events might capture screen text like "支付成功 ¥ 10.00"
     if (pkg.contains('com.tencent.mm')) {
-      _parseWeChatAcc(text, allNodesText);
+      _parseWeChatAcc(targetPage, allNodesText);
     } else if (pkg.contains('com.eg.android.AlipayGphone')) {
-      _parseAlipayAcc(text, allNodesText);
+      _parseAlipayAcc(targetPage, allNodesText);
     }
   }
 
-  void _parseWeChat(String title, String content) {
+  void _parseWeChat(
+    String title,
+    String content, {
+    DateTime? createdAt,
+  }) {
     final combined = '$title $content';
     final match = _extractNotificationMatch(combined);
     if (match == null) return;
@@ -201,11 +374,16 @@ class AutoBookkeepingService {
       match.amount,
       note,
       match.type,
+      createdAt: createdAt,
       source: RecordSource.autoWeChat,
     );
   }
 
-  void _parseAlipay(String title, String content) {
+  void _parseAlipay(
+    String title,
+    String content, {
+    DateTime? createdAt,
+  }) {
     final combined = '$title $content';
     final match = _extractNotificationMatch(combined);
     if (match == null) return;
@@ -225,13 +403,16 @@ class AutoBookkeepingService {
       match.amount,
       note,
       match.type,
+      createdAt: createdAt,
       source: RecordSource.autoAlipay,
     );
   }
 
-  void _parseWeChatAcc(String capturedText, List<String> nodesText) {
-    if (capturedText.contains('支付成功') ||
-        _containsNodeFragment(nodesText, '支付成功')) {
+  void _parseWeChatAcc(
+    _AccessibilityTargetPage targetPage,
+    List<String> nodesText,
+  ) {
+    if (targetPage == _AccessibilityTargetPage.paymentSuccess) {
       _extractAmountAndAdd(
         nodesText,
         '微信支付',
@@ -239,18 +420,22 @@ class AutoBookkeepingService {
         null,
         RecordSource.autoWeChat,
       );
+      return;
     }
-    if (_containsNodeFragment(nodesText, '账单详情')) {
+    if (targetPage == _AccessibilityTargetPage.billDetail) {
       _parseHistoricalBillDetails(nodesText, '微信');
+      return;
     }
     if (_looksLikeBillList(nodesText, '微信')) {
       _parseHistoricalBillList(nodesText, '微信');
     }
   }
 
-  void _parseAlipayAcc(String capturedText, List<String> nodesText) {
-    if (capturedText.contains('支付成功') ||
-        _containsNodeFragment(nodesText, '支付成功')) {
+  void _parseAlipayAcc(
+    _AccessibilityTargetPage targetPage,
+    List<String> nodesText,
+  ) {
+    if (targetPage == _AccessibilityTargetPage.paymentSuccess) {
       _extractAmountAndAdd(
         nodesText,
         '支付宝支付',
@@ -258,10 +443,11 @@ class AutoBookkeepingService {
         null,
         RecordSource.autoAlipay,
       );
+      return;
     }
-    if (_containsNodeFragment(nodesText, '账单详情') ||
-        _containsNodeFragment(nodesText, '订单详情')) {
+    if (targetPage == _AccessibilityTargetPage.billDetail) {
       _parseHistoricalBillDetails(nodesText, '支付宝');
+      return;
     }
     if (_looksLikeBillList(nodesText, '支付宝')) {
       _parseHistoricalBillList(nodesText, '支付宝');
@@ -316,12 +502,24 @@ class AutoBookkeepingService {
         amountCandidates.isNotEmpty ? amountCandidates.first : null;
 
     if (bestCandidate != null && bestCandidate.amount > 0) {
+      final resolvedNote = parsedNote ?? headerNote ?? '$platform历史账单';
+      final resolvedSource = _sourceForPlatform(platform);
+      if (_tryEnrichExistingAutoRecord(
+        amount: bestCandidate.amount,
+        note: resolvedNote,
+        type: bestCandidate.type,
+        createdAt: parsedTime,
+        source: resolvedSource,
+        categoryHint: parsedCategory,
+      )) {
+        return;
+      }
       _addRecordIfUnique(
         bestCandidate.amount,
-        parsedNote ?? headerNote ?? '$platform历史账单',
+        resolvedNote,
         bestCandidate.type,
         createdAt: parsedTime,
-        source: _sourceForPlatform(platform),
+        source: resolvedSource,
         categoryHint: parsedCategory,
       );
     }
@@ -349,6 +547,9 @@ class AutoBookkeepingService {
       final text = nodesText[i].trim();
       final amount = _extractBillAmount(text);
       if (amount == null || amount <= 0) continue;
+      if (_isSummaryAmountContext(nodesText, i)) {
+        continue;
+      }
       final isSupplementary = _isSupplementaryAmountContext(nodesText, i);
       if (isSupplementary) {
         continue;
@@ -480,8 +681,58 @@ class AutoBookkeepingService {
     return text.contains('支付宝') || text.contains('支付宝提醒');
   }
 
-  bool _containsNodeFragment(List<String> nodesText, String fragment) {
-    return nodesText.any((text) => text.contains(fragment));
+  _AccessibilityTargetPage? _detectAccessibilityTargetPage(
+    String packageName,
+    String capturedText,
+    AccessibilityEvent event,
+  ) {
+    final previewTexts = <String>[
+      if (capturedText.trim().isNotEmpty) capturedText.trim(),
+      ...(event.subNodes ?? const <AccessibilityEvent>[])
+          .map((node) => node.text)
+          .whereType<String>()
+          .map((text) => _normalizeAccessibilityText(text) ?? text.trim())
+          .where((text) => text.isNotEmpty && text != 'null')
+          .take(24),
+    ];
+    if (previewTexts.isEmpty) {
+      return null;
+    }
+    final preview = previewTexts.join(' ');
+    if (preview.contains('支付成功')) {
+      return _AccessibilityTargetPage.paymentSuccess;
+    }
+    if (_containsAnyText(
+      preview,
+      const ['账单详情', '订单详情', '商品说明', '商户全称', '交易对方', '账单分类'],
+    )) {
+      return _AccessibilityTargetPage.billDetail;
+    }
+    if (_looksLikeBillListPreview(packageName, previewTexts)) {
+      return _AccessibilityTargetPage.billList;
+    }
+    return null;
+  }
+
+  bool _looksLikeBillListPreview(
+      String packageName, List<String> previewTexts) {
+    final preview = previewTexts.join(' ');
+    final hasHeader = _containsAnyText(
+      preview,
+      const ['全部账单', '收支记录', '交易记录', '微信账单', '支付宝账单'],
+    );
+    final hasControls = _containsAnyText(
+      preview,
+      const ['筛选', '按月', '本月', '近30天', '全部'],
+    );
+    final platformHeader = packageName.contains('com.tencent.mm')
+        ? preview.contains('微信支付')
+        : preview.contains('支付宝') || preview.contains('账单');
+    return (hasHeader || platformHeader) && hasControls;
+  }
+
+  bool _containsAnyText(String text, List<String> keywords) {
+    return keywords.any(text.contains);
   }
 
   bool _shouldProcessAccessibilitySnapshot(
@@ -581,6 +832,7 @@ class AutoBookkeepingService {
     if (value == 'null') return null;
     if (_extractBillAmount(value) != null) return null;
     if (_parsePossibleBillTime(value) != null) return null;
+    if (_isSummaryText(value)) return null;
     const ignored = [
       '全部账单',
       '账单',
@@ -931,6 +1183,112 @@ class AutoBookkeepingService {
     return genericNotes.contains(note.trim());
   }
 
+  bool _tryEnrichExistingAutoRecord({
+    required double amount,
+    required String note,
+    required RecordType type,
+    required RecordSource source,
+    DateTime? createdAt,
+    String? categoryHint,
+  }) {
+    final targetTime = createdAt;
+    final enrichedCategoryId = BillCategoryMapper.inferCategoryId(
+      note,
+      categoryHint ?? '',
+      type,
+      _store,
+    );
+
+    ExpenseRecord? bestMatch;
+    Duration? bestDiff;
+    for (final record in _store.records) {
+      if (record.source != source ||
+          record.type != type ||
+          record.isManuallyEdited) {
+        continue;
+      }
+      if ((record.amount - amount).abs() > 0.009) {
+        continue;
+      }
+      if (!_canAutoEnrichRecord(record)) {
+        continue;
+      }
+      if (targetTime != null) {
+        final diff = record.createdAt.difference(targetTime).abs();
+        if (diff > _detailEnrichmentWindow) {
+          continue;
+        }
+        if (bestDiff != null && diff >= bestDiff) {
+          continue;
+        }
+        bestDiff = diff;
+      } else if (bestMatch != null) {
+        continue;
+      }
+      bestMatch = record;
+    }
+
+    if (bestMatch == null) {
+      return false;
+    }
+
+    final nextNote = _shouldReplaceWithDetailedNote(bestMatch.note, note)
+        ? note
+        : bestMatch.note;
+    final nextCategoryId = enrichedCategoryId;
+    final nextCreatedAt = targetTime ?? bestMatch.createdAt;
+    final needsUpdate =
+        _normalizeDedupNote(nextNote) != _normalizeDedupNote(bestMatch.note) ||
+            nextCategoryId != bestMatch.categoryId ||
+            nextCreatedAt != bestMatch.createdAt;
+    if (!needsUpdate) {
+      return true;
+    }
+
+    _store.updateRecord(
+      recordId: bestMatch.id,
+      amount: bestMatch.amount,
+      categoryId: nextCategoryId,
+      note: nextNote,
+      type: bestMatch.type,
+      createdAt: nextCreatedAt,
+      excludeFromBudget: bestMatch.excludeFromBudget,
+      markAsManuallyEdited: false,
+    );
+    debugPrint(
+        'AutoBookkeeping: Enriched existing record ${bestMatch.id} with detail info');
+    return true;
+  }
+
+  bool _canAutoEnrichRecord(ExpenseRecord record) {
+    if (record.source == null || record.isManuallyEdited) {
+      return false;
+    }
+    if (_isGenericAutoNote(record.note)) {
+      final inferredCategory = BillCategoryMapper.inferCategoryId(
+        record.note,
+        '',
+        record.type,
+        _store,
+      );
+      return inferredCategory == record.categoryId;
+    }
+    return false;
+  }
+
+  bool _shouldReplaceWithDetailedNote(
+      String existingNote, String detailedNote) {
+    final existing = _normalizeDedupNote(existingNote);
+    final detailed = _normalizeDedupNote(detailedNote);
+    if (detailed.isEmpty || existing == detailed) {
+      return false;
+    }
+    if (_isGenericAutoNote(existingNote)) {
+      return true;
+    }
+    return detailed.length > existing.length + 1;
+  }
+
   _AmountCandidate? _extractDetailAmountCandidate(
       List<String> nodesText, int index) {
     final text = nodesText[index].trim();
@@ -956,6 +1314,9 @@ class AutoBookkeepingService {
     }
 
     if (amount == null || amount <= 0) return null;
+    if (_isSummaryAmountContext(nodesText, index)) {
+      return null;
+    }
 
     var score = amount;
     if (index <= 4) score += 40;
@@ -986,6 +1347,56 @@ class AutoBookkeepingService {
       if (_containsSupplementaryKeyword(nodesText[i])) {
         return true;
       }
+    }
+    return false;
+  }
+
+  bool _isSummaryAmountContext(List<String> nodesText, int amountIndex) {
+    for (int i = amountIndex - 3; i <= amountIndex + 3; i++) {
+      if (i < 0 || i >= nodesText.length) continue;
+      if (_isSummaryText(nodesText[i])) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _isSummaryText(String text) {
+    final value = text.trim();
+    if (value.isEmpty || value == 'null') {
+      return false;
+    }
+    const keywords = [
+      '本月统计',
+      '月统计',
+      '累计',
+      '合计',
+      '总计',
+      '总支出',
+      '总收入',
+      '支出总额',
+      '收入总额',
+      '本月已支出',
+      '本月已收入',
+      '本月支出',
+      '本月收入',
+      '共支出',
+      '共收入',
+      '月支出',
+      '月收入',
+      '近30天',
+      '全部支出',
+      '全部收入',
+    ];
+    if (keywords.any(value.contains)) {
+      return true;
+    }
+    final compact = value.replaceAll(RegExp(r'\s+'), '');
+    if (RegExp(r'^[一二三四五六七八九十\d]{1,3}月已(支出|收入)').hasMatch(compact)) {
+      return true;
+    }
+    if (RegExp(r'^[一二三四五六七八九十\d]{1,3}月(支出|收入)').hasMatch(compact)) {
+      return true;
     }
     return false;
   }

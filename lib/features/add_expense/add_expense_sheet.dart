@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -339,43 +340,17 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
   }
 
   Future<void> _pickDateTime() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDateTime,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
-      initialEntryMode: DatePickerEntryMode.calendarOnly,
-      helpText: '选择日期',
-      cancelText: '取消',
-      confirmText: '确定',
-      locale: const Locale('zh', 'CN'),
-    );
-    if (picked == null) {
-      return;
-    }
-    if (!mounted) {
-      return;
-    }
-
-    final pickedTime = await _showTimeInputDialog(
+    final picked = await _showDateTimePickerSheet(
       context,
-      initialTime: TimeOfDay.fromDateTime(_selectedDateTime),
+      initialDateTime: _selectedDateTime,
+      minDate: DateTime(2020),
+      maxDate: DateTime.now(),
     );
-    if (pickedTime == null) {
+    if (picked == null || !mounted) {
       return;
     }
-    if (!mounted) {
-      return;
-    }
-
     setState(() {
-      _selectedDateTime = DateTime(
-        picked.year,
-        picked.month,
-        picked.day,
-        pickedTime.hour,
-        pickedTime.minute,
-      );
+      _selectedDateTime = picked;
     });
   }
 
@@ -433,141 +408,124 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
         .replaceAll(RegExp(r'\.$'), '');
   }
 
-  Future<TimeOfDay?> _showTimeInputDialog(
+  Future<DateTime?> _showDateTimePickerSheet(
     BuildContext context, {
-    required TimeOfDay initialTime,
+    required DateTime initialDateTime,
+    required DateTime minDate,
+    required DateTime maxDate,
   }) async {
-    final hourController = TextEditingController(
-      text: initialTime.hour.toString().padLeft(2, '0'),
-    );
-    final minuteController = TextEditingController(
-      text: initialTime.minute.toString().padLeft(2, '0'),
-    );
-    final hourFocusNode = FocusNode();
-    final minuteFocusNode = FocusNode();
-
-    void selectAll(TextEditingController controller) {
-      controller.selection = TextSelection(
-        baseOffset: 0,
-        extentOffset: controller.text.length,
-      );
+    DateTime normalize(DateTime value) {
+      if (value.isBefore(minDate)) {
+        return minDate;
+      }
+      if (value.isAfter(maxDate)) {
+        return maxDate;
+      }
+      return value;
     }
 
-    hourFocusNode.addListener(() {
-      if (hourFocusNode.hasFocus) {
-        selectAll(hourController);
-      }
-    });
-    minuteFocusNode.addListener(() {
-      if (minuteFocusNode.hasFocus) {
-        selectAll(minuteController);
-      }
-    });
-
-    void maybeAdvanceToMinute(String value) {
-      final hour = int.tryParse(value);
-      if (hour == null) {
-        return;
-      }
-
-      final shouldAdvance =
-          value.length >= 2 || (value.length == 1 && hour >= 3);
-      if (shouldAdvance && !minuteFocusNode.hasFocus) {
-        minuteFocusNode.requestFocus();
-      }
-    }
-
-    final result = await showDialog<TimeOfDay>(
+    final initialValue = normalize(initialDateTime);
+    final result = await showModalBottomSheet<DateTime>(
       context: context,
-      builder: (dialogContext) {
-        String? errorText;
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        var tempSelected = initialValue;
         return StatefulBuilder(
           builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('设置时间'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+            final theme = Theme.of(context);
+            final selectedLabel =
+                '${formatMonthLabel(tempSelected)} · ${formatDayLabelWithWeekday(tempSelected)} · ${_formatTime(tempSelected)}';
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+              child: SafeArea(
+                top: false,
+                child: SizedBox(
+                  height: 360,
+                  child: Column(
                     children: [
-                      Expanded(
-                        child: _TimeNumberField(
-                          controller: hourController,
-                          focusNode: hourFocusNode,
-                          label: '小时',
-                          onChanged: maybeAdvanceToMinute,
-                          onSubmitted: (_) {
-                            minuteFocusNode.requestFocus();
-                          },
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+                        child: Row(
+                          children: [
+                            TextButton(
+                              onPressed: () => Navigator.of(sheetContext).pop(),
+                              child: const Text('取消'),
+                            ),
+                            Expanded(
+                              child: Text(
+                                '设置时间',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            FilledButton(
+                              onPressed: () =>
+                                  Navigator.of(sheetContext).pop(tempSelected),
+                              style: FilledButton.styleFrom(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 18),
+                                minimumSize: const Size(0, 40),
+                              ),
+                              child: const Text('确定'),
+                            ),
+                          ],
                         ),
                       ),
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
                         child: Text(
-                          ':',
-                          style: Theme.of(context).textTheme.titleLarge,
+                          selectedLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: AppTheme.muted,
+                          ),
                         ),
                       ),
+                      const Divider(height: 1),
                       Expanded(
-                        child: _TimeNumberField(
-                          controller: minuteController,
-                          focusNode: minuteFocusNode,
-                          label: '分钟',
-                          onChanged: (_) {},
-                          onSubmitted: (_) {},
+                        child: CupertinoTheme(
+                          data: CupertinoThemeData(
+                            brightness: Brightness.light,
+                            textTheme: CupertinoTextThemeData(
+                              dateTimePickerTextStyle:
+                                  theme.textTheme.titleLarge?.copyWith(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF1F2937),
+                              ),
+                            ),
+                          ),
+                          child: CupertinoDatePicker(
+                            mode: CupertinoDatePickerMode.dateAndTime,
+                            use24hFormat: true,
+                            minimumDate: minDate,
+                            maximumDate: maxDate,
+                            initialDateTime: initialValue,
+                            onDateTimeChanged: (value) {
+                              setState(() {
+                                tempSelected = normalize(value);
+                              });
+                            },
+                          ),
                         ),
                       ),
                     ],
                   ),
-                  if (errorText != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      errorText!,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.error,
-                          ),
-                    ),
-                  ],
-                ],
+                ),
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('取消'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    final hour = int.tryParse(hourController.text);
-                    final minute = int.tryParse(minuteController.text);
-                    if (hour == null ||
-                        minute == null ||
-                        hour < 0 ||
-                        hour > 23 ||
-                        minute < 0 ||
-                        minute > 59) {
-                      setState(() {
-                        errorText = '请输入有效时间，小时 0-23，分钟 0-59';
-                      });
-                      return;
-                    }
-                    Navigator.of(dialogContext).pop(
-                      TimeOfDay(hour: hour, minute: minute),
-                    );
-                  },
-                  child: const Text('确定'),
-                ),
-              ],
             );
           },
         );
       },
     );
-
-    hourController.dispose();
-    minuteController.dispose();
-    hourFocusNode.dispose();
-    minuteFocusNode.dispose();
     return result;
   }
 
@@ -597,50 +555,6 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
       store.deleteRecord(widget.expense!.id);
       Navigator.of(context).pop();
     }
-  }
-}
-
-class _TimeNumberField extends StatelessWidget {
-  const _TimeNumberField({
-    required this.controller,
-    required this.focusNode,
-    required this.label,
-    required this.onChanged,
-    required this.onSubmitted,
-  });
-
-  final TextEditingController controller;
-  final FocusNode focusNode;
-  final String label;
-  final ValueChanged<String> onChanged;
-  final ValueChanged<String> onSubmitted;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      focusNode: focusNode,
-      autofocus: label == '小时',
-      keyboardType: TextInputType.number,
-      textAlign: TextAlign.center,
-      decoration: InputDecoration(
-        labelText: label,
-        counterText: '',
-      ),
-      maxLength: 2,
-      inputFormatters: [
-        FilteringTextInputFormatter.digitsOnly,
-        LengthLimitingTextInputFormatter(2),
-      ],
-      onTap: () {
-        controller.selection = TextSelection(
-          baseOffset: 0,
-          extentOffset: controller.text.length,
-        );
-      },
-      onChanged: onChanged,
-      onSubmitted: onSubmitted,
-    );
   }
 }
 

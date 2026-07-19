@@ -9,6 +9,7 @@ import '../models/app_models.dart';
 
 class AppStorage {
   static const databaseName = 'pocket_meow.db';
+  static const _preferencesTableName = 'app_preferences';
   Database? _database;
 
   Future<Database> get database async {
@@ -27,10 +28,16 @@ class AppStorage {
     final path = await databasePath();
     _database = await openDatabase(
       path,
-      version: 4,
+      version: 6,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE app_meta(
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE $_preferencesTableName(
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
           )
@@ -55,7 +62,8 @@ class AppStorage {
             createdAt TEXT NOT NULL,
             type TEXT NOT NULL,
             excludeFromBudget INTEGER NOT NULL DEFAULT 0,
-            source TEXT
+            source TEXT,
+            isManuallyEdited INTEGER NOT NULL DEFAULT 0
           )
         ''');
         await db.execute('''
@@ -250,6 +258,18 @@ class AppStorage {
         if (oldVersion < 4) {
           await db.execute('ALTER TABLE records ADD COLUMN source TEXT');
         }
+        if (oldVersion < 5) {
+          await db.execute(
+              'ALTER TABLE records ADD COLUMN isManuallyEdited INTEGER NOT NULL DEFAULT 0');
+        }
+        if (oldVersion < 6) {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS $_preferencesTableName(
+              key TEXT PRIMARY KEY,
+              value TEXT NOT NULL
+            )
+          ''');
+        }
       },
     );
     return _database!;
@@ -267,6 +287,42 @@ class AppStorage {
 
     final path = await databasePath();
     return '当前账单保存在设备本地 SQLite 数据库中，覆盖安装新版本 APK 时不会清空。仅在卸载应用、手动清除应用数据或点击“恢复初始状态”时才会被移除。\n\n数据库位置：$path';
+  }
+
+  Future<String?> readPreference(String key) async {
+    final db = await database;
+    final rows = await db.query(
+      _preferencesTableName,
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
+    if (rows.isEmpty) {
+      return null;
+    }
+    return rows.first['value'] as String?;
+  }
+
+  Future<void> writePreference(String key, String value) async {
+    final db = await database;
+    await db.insert(
+      _preferencesTableName,
+      {
+        'key': key,
+        'value': value,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deletePreference(String key) async {
+    final db = await database;
+    await db.delete(
+      _preferencesTableName,
+      where: 'key = ?',
+      whereArgs: [key],
+    );
   }
 
   Future<AppSnapshot?> loadSnapshot() async {
@@ -328,6 +384,7 @@ class AppStorage {
               type: RecordTypeX.fromKey(row['type'] as String?),
               excludeFromBudget: (row['excludeFromBudget'] as int? ?? 0) == 1,
               source: RecordSourceX.fromKey(row['source'] as String?),
+              isManuallyEdited: (row['isManuallyEdited'] as int? ?? 0) == 1,
             ),
           )
           .toList(),
@@ -418,6 +475,7 @@ class AppStorage {
             'type': expense.type.key,
             'excludeFromBudget': expense.excludeFromBudget ? 1 : 0,
             'source': expense.source?.key,
+            'isManuallyEdited': expense.isManuallyEdited ? 1 : 0,
           },
         );
       }

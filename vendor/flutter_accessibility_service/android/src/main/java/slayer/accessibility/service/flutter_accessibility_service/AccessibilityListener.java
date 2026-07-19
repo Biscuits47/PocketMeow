@@ -44,6 +44,8 @@ import io.flutter.embedding.engine.FlutterEngineCache;
 
 
 public class AccessibilityListener extends AccessibilityService {
+    private static final int PREVIEW_MAX_DEPTH = 2;
+    private static final int PREVIEW_MAX_TEXT_COUNT = 24;
     private static final Set<String> ALLOWED_PACKAGES =
             new HashSet<String>() {{
                 add("com.tencent.mm");
@@ -91,6 +93,9 @@ public class AccessibilityListener extends AccessibilityService {
             String nodeId = generateNodeId(parentNodeInfo);
             String packageName = parentNodeInfo.getPackageName().toString();
             if (!ALLOWED_PACKAGES.contains(packageName)) {
+                return;
+            }
+            if (!shouldCaptureTargetPage(packageName, parentNodeInfo)) {
                 return;
             }
             storeNode(nodeId, parentNodeInfo);
@@ -210,6 +215,73 @@ public class AccessibilityListener extends AccessibilityService {
                 getSubNodes(child, arr, traversedNodes, currentDepth + 1);
             }
         }
+    }
+
+    private boolean shouldCaptureTargetPage(String packageName, AccessibilityNodeInfo nodeInfo) {
+        List<String> previewTexts = new ArrayList<>();
+        collectPreviewTexts(nodeInfo, previewTexts, new HashSet<>(), 0);
+        if (previewTexts.isEmpty()) {
+            return false;
+        }
+        String preview = String.join(" ", previewTexts);
+        if (containsAny(preview, "支付成功")) {
+            return true;
+        }
+        if (containsAny(preview, "账单详情", "订单详情", "商品说明", "商户全称", "交易对方", "账单分类")) {
+            return true;
+        }
+        return looksLikeBillListPreview(packageName, preview);
+    }
+
+    private void collectPreviewTexts(
+            AccessibilityNodeInfo node,
+            List<String> previewTexts,
+            HashSet<AccessibilityNodeInfo> traversedNodes,
+            int currentDepth
+    ) {
+        if (node == null || currentDepth > PREVIEW_MAX_DEPTH || previewTexts.size() >= PREVIEW_MAX_TEXT_COUNT) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2 && traversedNodes.contains(node)) {
+            return;
+        }
+        traversedNodes.add(node);
+        if (node.getText() != null) {
+            String normalized = node.getText().toString().trim();
+            if (!normalized.isEmpty() && !"null".equals(normalized)) {
+                previewTexts.add(normalized);
+            }
+        }
+        if (currentDepth >= PREVIEW_MAX_DEPTH) {
+            return;
+        }
+        for (int i = 0; i < node.getChildCount() && previewTexts.size() < PREVIEW_MAX_TEXT_COUNT; i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child == null) {
+                continue;
+            }
+            collectPreviewTexts(child, previewTexts, traversedNodes, currentDepth + 1);
+        }
+    }
+
+    private boolean looksLikeBillListPreview(String packageName, String preview) {
+        boolean hasHeader = containsAny(preview, "全部账单", "收支记录", "交易记录");
+        boolean hasControls = containsAny(preview, "筛选", "按月", "本月", "近30天", "全部");
+        if (packageName.contains("com.tencent.mm")) {
+            hasHeader = hasHeader || containsAny(preview, "微信支付");
+        } else if (packageName.contains("com.eg.android.AlipayGphone")) {
+            hasHeader = hasHeader || containsAny(preview, "支付宝", "账单");
+        }
+        return hasHeader && hasControls;
+    }
+
+    private boolean containsAny(String text, String... keywords) {
+        for (String keyword : keywords) {
+            if (text.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private HashMap<String, Integer> getBoundingPoints(Rect rect) {

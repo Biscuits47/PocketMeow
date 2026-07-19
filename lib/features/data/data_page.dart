@@ -44,22 +44,9 @@ class _DataPageState extends State<DataPage> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: SegmentedButton<ReportType>(
-                    segments: const [
-                      ButtonSegment(
-                          value: ReportType.weekly, label: Text('周报')),
-                      ButtonSegment(
-                          value: ReportType.monthly, label: Text('月报')),
-                      ButtonSegment(
-                          value: ReportType.yearly, label: Text('年报')),
-                    ],
-                    selected: {store.reportType},
-                    onSelectionChanged: (set) {
-                      store.setReportType(set.first);
-                    },
-                  ),
+                _ReportTypeSwitch(
+                  type: store.reportType,
+                  onChanged: store.setReportType,
                 ),
                 const SizedBox(height: 20),
                 Row(
@@ -135,6 +122,169 @@ class _TypeSwitchCompact extends StatelessWidget {
   }
 }
 
+class _ReportTypeSwitch extends StatelessWidget {
+  const _ReportTypeSwitch({
+    required this.type,
+    required this.onChanged,
+  });
+
+  final ReportType type;
+  final ValueChanged<ReportType> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    const reportTypes = [
+      ReportType.weekly,
+      ReportType.monthly,
+      ReportType.yearly,
+    ];
+    final selectedIndex = reportTypes.indexOf(type);
+
+    return SizedBox(
+      height: 62,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final thumbWidth = (constraints.maxWidth - 10) / reportTypes.length;
+          return Container(
+            padding: const EdgeInsets.all(5),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F4F6),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: const Color(0xFFE7ECEF)),
+            ),
+            child: Stack(
+              children: [
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeOutCubic,
+                  left: thumbWidth * selectedIndex,
+                  top: 0,
+                  bottom: 0,
+                  width: thumbWidth,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 14,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Row(
+                  children: reportTypes
+                      .map(
+                        (reportType) => Expanded(
+                          child: _ReportTypeButton(
+                            type: reportType,
+                            isSelected: type == reportType,
+                            onTap: () => onChanged(reportType),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ReportTypeButton extends StatelessWidget {
+  const _ReportTypeButton({
+    required this.type,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final ReportType type;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final meta = _reportTypeMeta(type);
+    final theme = Theme.of(context);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Center(
+          child: AnimatedScale(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            scale: isSelected ? 1 : 0.96,
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 180),
+              opacity: isSelected ? 1 : 0.82,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    meta.icon,
+                    size: 17,
+                    color: isSelected ? AppTheme.ink : AppTheme.muted,
+                  ),
+                  const SizedBox(height: 4),
+                  AnimatedDefaultTextStyle(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    style: theme.textTheme.bodyMedium!.copyWith(
+                      fontWeight:
+                          isSelected ? FontWeight.w700 : FontWeight.w500,
+                      color: isSelected ? AppTheme.ink : AppTheme.muted,
+                    ),
+                    child: Text(meta.label),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReportTypeMeta {
+  const _ReportTypeMeta({
+    required this.label,
+    required this.icon,
+  });
+
+  final String label;
+  final IconData icon;
+}
+
+_ReportTypeMeta _reportTypeMeta(ReportType type) {
+  switch (type) {
+    case ReportType.weekly:
+      return const _ReportTypeMeta(
+        label: '周报',
+        icon: Icons.view_week_outlined,
+      );
+    case ReportType.monthly:
+      return const _ReportTypeMeta(
+        label: '月报',
+        icon: Icons.calendar_view_month_rounded,
+      );
+    case ReportType.yearly:
+      return const _ReportTypeMeta(
+        label: '年报',
+        icon: Icons.date_range_rounded,
+      );
+  }
+}
+
 class _TypeButton extends StatelessWidget {
   const _TypeButton({
     required this.label,
@@ -185,18 +335,16 @@ class _SettingsShortcut extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: onTap,
-      child: Ink(
-        width: 42,
-        height: 42,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFE6EBEE)),
-        ),
-        child: const Icon(Icons.settings_outlined),
+    return IconButton(
+      onPressed: onTap,
+      icon: const Icon(Icons.settings_outlined),
+      splashRadius: 20,
+      color: AppTheme.ink,
+      tooltip: '设置',
+      style: IconButton.styleFrom(
+        minimumSize: const Size(40, 40),
+        padding: EdgeInsets.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
     );
   }
@@ -212,18 +360,20 @@ class _SpendingDistributionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final items = store.categoryDataForType(type).toList();
-    final total =
-        type == RecordType.expense ? store.monthSpent : store.monthIncome;
+    final total = items.fold(0.0, (sum, item) => sum + item.amount);
     final periodName = store.reportType == ReportType.yearly
         ? '年'
         : (store.reportType == ReportType.weekly ? '周' : '月');
     final typeName = type == RecordType.expense ? '支出' : '收入';
+    final pieChartHeight = min(340.0, max(280.0, 208.0 + items.length * 14.0));
 
     List<CategorySpendData> pieItems = [];
     List<CategorySpendData> otherItems = [];
 
     for (final item in items) {
-      if (total > 0 && (item.amount / total) < 0.10) {
+      if (total > 0 && (item.amount / total) < 0.02) {
+        otherItems.add(item);
+      } else if (pieItems.length >= 10) {
         otherItems.add(item);
       } else {
         pieItems.add(item);
@@ -264,7 +414,7 @@ class _SpendingDistributionCard extends StatelessWidget {
             const SizedBox(height: 18),
             if (items.isEmpty)
               Container(
-                height: 220,
+                height: 260,
                 decoration: BoxDecoration(
                   color: const Color(0xFFF7F9FA),
                   borderRadius: BorderRadius.circular(24),
@@ -281,7 +431,7 @@ class _SpendingDistributionCard extends StatelessWidget {
               Column(
                 children: [
                   SizedBox(
-                    height: 240,
+                    height: pieChartHeight,
                     child: _PieDistributionChart(
                       items: pieItems,
                       total: total,
@@ -290,9 +440,7 @@ class _SpendingDistributionCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 24),
                   Column(
-                    children: items.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      final item = entry.value;
+                    children: items.map((item) {
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: InkWell(
@@ -303,14 +451,6 @@ class _SpendingDistributionCard extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             child: Row(
                               children: [
-                                Text(
-                                  '${index + 1}',
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: AppTheme.muted,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
                                 Container(
                                   width: 36,
                                   height: 36,
@@ -364,20 +504,33 @@ class _SpendingDistributionCard extends StatelessWidget {
                                   ),
                                 ),
                                 const SizedBox(width: 16),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
-                                    Text(
-                                      '${(item.shareOf(total) * 100).toStringAsFixed(2)}%',
-                                      style:
-                                          theme.textTheme.bodyMedium?.copyWith(
-                                        color: AppTheme.muted,
-                                      ),
+                                    Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.end,
+                                      children: [
+                                        Text(
+                                          '${(item.shareOf(total) * 100).toStringAsFixed(2)}%',
+                                          style: theme.textTheme.bodyMedium
+                                              ?.copyWith(
+                                            color: AppTheme.muted,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          formatChartAmount(item.amount),
+                                          style: theme.textTheme.titleMedium,
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      formatChartAmount(item.amount),
-                                      style: theme.textTheme.titleMedium,
+                                    const SizedBox(width: 4),
+                                    const Icon(
+                                      Icons.chevron_right_rounded,
+                                      size: 22,
+                                      color: AppTheme.muted,
                                     ),
                                   ],
                                 ),
@@ -411,29 +564,58 @@ class _PieDistributionChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final labelEntries = _buildPieLabelEntries(items, total);
-    final leftEntries = labelEntries
-        .where((entry) => !entry.isRightSide)
-        .toList()
-      ..sort((a, b) => a.yPosition.compareTo(b.yPosition));
-    final rightEntries = labelEntries
-        .where((entry) => entry.isRightSide)
-        .toList()
-      ..sort((a, b) => a.yPosition.compareTo(b.yPosition));
+    final maxAmount = items.fold<double>(
+      0,
+      (currentMax, item) => max(currentMax, item.amount),
+    );
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final chartSize = min(168.0, max(140.0, constraints.maxWidth * 0.38));
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+        final chartSize = min(136.0, max(116.0, constraints.maxWidth * 0.27));
+        final chartCenter = Offset(
+          constraints.maxWidth / 2,
+          constraints.maxHeight / 2,
+        );
+        final labelEntries = _buildPieLabelEntries(items, total);
+        final leftEntries = labelEntries
+            .where((entry) => !entry.isRightSide)
+            .toList()
+          ..sort((a, b) => a.anchorY.compareTo(b.anchorY));
+        final rightEntries = labelEntries
+            .where((entry) => entry.isRightSide)
+            .toList()
+          ..sort((a, b) => a.anchorY.compareTo(b.anchorY));
+
+        final layouts = [
+          ..._buildLeaderLayouts(
+            entries: leftEntries,
+            isRightSide: false,
+            size: constraints.biggest,
+            center: chartCenter,
+            chartSize: chartSize,
+            maxAmount: maxAmount,
+          ),
+          ..._buildLeaderLayouts(
+            entries: rightEntries,
+            isRightSide: true,
+            size: constraints.biggest,
+            center: chartCenter,
+            chartSize: chartSize,
+            maxAmount: maxAmount,
+          ),
+        ];
+
+        return Stack(
+          clipBehavior: Clip.none,
           children: [
-            Expanded(
-              child: _PieLabelColumn(
-                entries: leftEntries,
-                alignRight: true,
+            Positioned.fill(
+              child: CustomPaint(
+                painter: _PieLeaderLinesPainter(layouts: layouts),
               ),
             ),
-            SizedBox(
+            Positioned(
+              left: chartCenter.dx - chartSize / 2,
+              top: chartCenter.dy - chartSize / 2,
               width: chartSize,
               height: chartSize,
               child: Stack(
@@ -444,16 +626,18 @@ class _PieDistributionChart extends StatelessWidget {
                       startDegreeOffset: -90,
                       centerSpaceRadius: chartSize * 0.34,
                       sectionsSpace: 2,
-                      sections: items
-                          .map(
-                            (item) => PieChartSectionData(
-                              color: Color(item.category.colorValue),
-                              value: item.amount,
-                              radius: chartSize * 0.28,
-                              title: '',
-                            ),
-                          )
-                          .toList(),
+                      sections: items.map(
+                        (item) {
+                          final isPrimarySlice =
+                              maxAmount > 0 && item.amount == maxAmount;
+                          return PieChartSectionData(
+                            color: Color(item.category.colorValue),
+                            value: item.amount,
+                            radius: chartSize * (isPrimarySlice ? 0.32 : 0.28),
+                            title: '',
+                          );
+                        },
+                      ).toList(),
                     ),
                   ),
                   Column(
@@ -477,10 +661,28 @@ class _PieDistributionChart extends StatelessWidget {
                 ],
               ),
             ),
-            Expanded(
-              child: _PieLabelColumn(
-                entries: rightEntries,
-                alignRight: false,
+            ...layouts.map(
+              (layout) => Positioned(
+                left: layout.labelLeft,
+                top: layout.labelTop,
+                width: layout.labelWidth,
+                height: layout.labelHeight,
+                child: Align(
+                  alignment: layout.alignRight
+                      ? Alignment.centerRight
+                      : Alignment.centerLeft,
+                  child: Text(
+                    '${layout.entry.item.category.name} ${layout.entry.percentText}%',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign:
+                        layout.alignRight ? TextAlign.right : TextAlign.left,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: const Color(0xFF5E656B),
+                      height: 1.25,
+                    ),
+                  ),
+                ),
               ),
             ),
           ],
@@ -490,77 +692,128 @@ class _PieDistributionChart extends StatelessWidget {
   }
 }
 
-class _PieLabelColumn extends StatelessWidget {
-  const _PieLabelColumn({
-    required this.entries,
-    required this.alignRight,
-  });
+List<_PieLeaderLayout> _buildLeaderLayouts({
+  required List<_PieLabelEntry> entries,
+  required bool isRightSide,
+  required Size size,
+  required Offset center,
+  required double chartSize,
+  required double maxAmount,
+}) {
+  if (entries.isEmpty) {
+    return const [];
+  }
 
-  final List<_PieLabelEntry> entries;
-  final bool alignRight;
+  const labelHeight = 34.0;
+  const minLabelGap = 10.0;
+  const verticalPadding = 18.0;
+  const normalSegmentLength = 36.0;
+  const horizontalSegmentLength = 12.0;
+  const labelGap = 8.0;
 
-  @override
-  Widget build(BuildContext context) {
-    if (entries.isEmpty) {
-      return const SizedBox.shrink();
-    }
+  final minCenterY = verticalPadding + labelHeight / 2;
+  final maxCenterY = size.height - verticalPadding - labelHeight / 2;
+  final desiredLayouts = <_PieLeaderLayout>[];
 
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      crossAxisAlignment:
-          alignRight ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-      children: entries
-          .map(
-            (entry) => _PieLabelTile(
-              entry: entry,
-              alignRight: alignRight,
-            ),
-          )
-          .toList(),
+  for (final entry in entries) {
+    final isPrimarySlice = maxAmount > 0 && entry.item.amount == maxAmount;
+    final sectionRadius = chartSize * (isPrimarySlice ? 0.32 : 0.28);
+    final outerRadius = (chartSize * 0.34) + sectionRadius;
+    final radialUnit = Offset(cos(entry.angleRadians), sin(entry.angleRadians));
+
+    final start = Offset(
+      center.dx + radialUnit.dx * outerRadius,
+      center.dy + radialUnit.dy * outerRadius,
+    );
+
+    final elbow = Offset(
+      start.dx + radialUnit.dx * normalSegmentLength,
+      start.dy + radialUnit.dy * normalSegmentLength,
+    );
+
+    final lineEndX = isRightSide
+        ? elbow.dx + horizontalSegmentLength
+        : elbow.dx - horizontalSegmentLength;
+    final labelLeft = isRightSide ? lineEndX + labelGap : 0.0;
+    final labelWidth = isRightSide
+        ? max(10.0, size.width - labelLeft)
+        : max(10.0, lineEndX - labelGap);
+
+    desiredLayouts.add(
+      _PieLeaderLayout(
+        entry: entry,
+        alignRight: !isRightSide,
+        start: start,
+        bend: elbow,
+        labelY: elbow.dy.clamp(minCenterY, maxCenterY),
+        lineEndX: lineEndX,
+        labelLeft: labelLeft,
+        labelTop: 0,
+        labelHeight: labelHeight,
+        labelWidth: labelWidth,
+      ),
     );
   }
+
+  for (var index = 1; index < desiredLayouts.length; index++) {
+    final previous = desiredLayouts[index - 1];
+    final current = desiredLayouts[index];
+    final minCurrentY = previous.labelY + labelHeight + minLabelGap;
+    if (current.labelY < minCurrentY) {
+      desiredLayouts[index] =
+          current.copyWith(labelY: min(minCurrentY, maxCenterY));
+    }
+  }
+
+  for (var index = desiredLayouts.length - 2; index >= 0; index--) {
+    final next = desiredLayouts[index + 1];
+    final current = desiredLayouts[index];
+    final maxCurrentY = next.labelY - labelHeight - minLabelGap;
+    if (current.labelY > maxCurrentY) {
+      desiredLayouts[index] =
+          current.copyWith(labelY: max(maxCurrentY, minCenterY));
+    }
+  }
+
+  return desiredLayouts
+      .map(
+        (layout) => layout.copyWith(
+          labelY: layout.bend.dy,
+          labelTop: layout.bend.dy - labelHeight / 2,
+          labelHeight: labelHeight,
+        ),
+      )
+      .toList(growable: false);
 }
 
-class _PieLabelTile extends StatelessWidget {
-  const _PieLabelTile({
-    required this.entry,
-    required this.alignRight,
+class _PieLeaderLinesPainter extends CustomPainter {
+  const _PieLeaderLinesPainter({
+    required this.layouts,
   });
 
-  final _PieLabelEntry entry;
-  final bool alignRight;
+  final List<_PieLeaderLayout> layouts;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final line = Container(
-      width: 18,
-      height: 2,
-      decoration: BoxDecoration(
-        color: entry.color,
-        borderRadius: BorderRadius.circular(999),
-      ),
-    );
-    final text = Flexible(
-      child: Text(
-        '${entry.item.category.name} ${entry.percentText}%',
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        textAlign: alignRight ? TextAlign.right : TextAlign.left,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: const Color(0xFF5E656B),
-          height: 1.25,
-        ),
-      ),
-    );
+  void paint(Canvas canvas, Size size) {
+    final guidePaint = Paint()
+      ..color = const Color(0xFFD6DADF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
 
-    return Row(
-      mainAxisAlignment:
-          alignRight ? MainAxisAlignment.end : MainAxisAlignment.start,
-      children: alignRight
-          ? [text, const SizedBox(width: 8), line]
-          : [line, const SizedBox(width: 8), text],
-    );
+    for (final layout in layouts) {
+      final path = Path()
+        ..moveTo(layout.start.dx, layout.start.dy)
+        ..lineTo(layout.bend.dx, layout.bend.dy)
+        ..lineTo(layout.lineEndX, layout.bend.dy);
+      canvas.drawPath(path, guidePaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _PieLeaderLinesPainter oldDelegate) {
+    return oldDelegate.layouts != layouts;
   }
 }
 
@@ -579,10 +832,10 @@ List<_PieLabelEntry> _buildPieLabelEntries(
     entries.add(
       _PieLabelEntry(
         item: item,
-        color: Color(item.category.colorValue),
         percentText: _formatPieLabelPercent(share),
         isRightSide: cos(radians) >= 0,
-        yPosition: sin(radians),
+        angleRadians: radians,
+        anchorY: sin(radians),
       ),
     );
     currentAngle += angle;
@@ -602,17 +855,69 @@ String _formatPieLabelPercent(double value) {
 class _PieLabelEntry {
   const _PieLabelEntry({
     required this.item,
-    required this.color,
     required this.percentText,
     required this.isRightSide,
-    required this.yPosition,
+    required this.angleRadians,
+    required this.anchorY,
   });
 
   final CategorySpendData item;
-  final Color color;
   final String percentText;
   final bool isRightSide;
-  final double yPosition;
+  final double angleRadians;
+  final double anchorY;
+}
+
+class _PieLeaderLayout {
+  const _PieLeaderLayout({
+    required this.entry,
+    required this.alignRight,
+    required this.start,
+    required this.bend,
+    required this.labelY,
+    required this.lineEndX,
+    required this.labelLeft,
+    required this.labelTop,
+    required this.labelHeight,
+    required this.labelWidth,
+  });
+
+  final _PieLabelEntry entry;
+  final bool alignRight;
+  final Offset start;
+  final Offset bend;
+  final double labelY;
+  final double lineEndX;
+  final double labelLeft;
+  final double labelTop;
+  final double labelHeight;
+  final double labelWidth;
+
+  _PieLeaderLayout copyWith({
+    _PieLabelEntry? entry,
+    bool? alignRight,
+    Offset? start,
+    Offset? bend,
+    double? labelY,
+    double? lineEndX,
+    double? labelLeft,
+    double? labelTop,
+    double? labelHeight,
+    double? labelWidth,
+  }) {
+    return _PieLeaderLayout(
+      entry: entry ?? this.entry,
+      alignRight: alignRight ?? this.alignRight,
+      start: start ?? this.start,
+      bend: bend ?? this.bend,
+      labelY: labelY ?? this.labelY,
+      lineEndX: lineEndX ?? this.lineEndX,
+      labelLeft: labelLeft ?? this.labelLeft,
+      labelTop: labelTop ?? this.labelTop,
+      labelHeight: labelHeight ?? this.labelHeight,
+      labelWidth: labelWidth ?? this.labelWidth,
+    );
+  }
 }
 
 class _TrendCard extends StatefulWidget {
@@ -865,15 +1170,25 @@ class _InsightsSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final topCategory =
-        store.categorySpendData.isEmpty ? null : store.categorySpendData.first;
+    final includedRecords = store.currentMonthRecords
+        .where((record) => !record.excludeFromBudget)
+        .toList();
+    final includedExpenses = includedRecords
+        .where((record) => record.type == RecordType.expense)
+        .toList();
+    final includedIncomes = includedRecords
+        .where((record) => record.type == RecordType.income)
+        .toList();
+    final topCategory = _buildSummaryTopCategory(store, includedExpenses);
 
     final periodName = store.reportType == ReportType.yearly
         ? '年'
         : (store.reportType == ReportType.weekly ? '周' : '月');
 
-    final currentExp = store.monthSpent;
-    final currentInc = store.monthIncome;
+    final currentExp =
+        includedExpenses.fold(0.0, (sum, record) => sum + record.amount);
+    final currentInc =
+        includedIncomes.fold(0.0, (sum, record) => sum + record.amount);
     final useBudgetBalance = store.reportType == ReportType.monthly;
     final currentBalance =
         useBudgetBalance ? store.remainingBudget : currentInc - currentExp;
@@ -885,7 +1200,7 @@ class _InsightsSummaryCard extends StatelessWidget {
         ? '${useBudgetBalance ? '预算结余' : '结余'} ${formatShortCurrency(currentBalance)}'
         : '${useBudgetBalance ? '预算超支' : '超支'} ${formatShortCurrency(currentBalance.abs())}';
 
-    final salaryAndBonus = store.currentMonthIncomes.where((r) {
+    final salaryAndBonus = includedIncomes.where((r) {
       final cat = store.categoryById(r.categoryId);
       return cat?.name == '工资' ||
           cat?.name == '奖金' ||
@@ -912,6 +1227,25 @@ class _InsightsSummaryCard extends StatelessWidget {
     final defaultStyle = theme.textTheme.bodyMedium!;
     final boldStyle = defaultStyle.copyWith(fontWeight: FontWeight.bold);
 
+    if (includedRecords.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('智能总结', style: theme.textTheme.titleLarge),
+              const SizedBox(height: 14),
+              Text(
+                '当前统计会自动忽略“不计入预算”的交易，暂时没有可用于分析的数据。',
+                style: defaultStyle.copyWith(color: AppTheme.muted),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (store.reportType == ReportType.yearly) {
       insights.add(TextSpan(children: [
         TextSpan(text: '本年度总收入为 ${formatShortCurrency(currentInc)}，其中'),
@@ -925,10 +1259,10 @@ class _InsightsSummaryCard extends StatelessWidget {
     }
     if (topCategory != null) {
       insights.add(TextSpan(children: [
-        TextSpan(text: topCategory.category.name.trim(), style: boldStyle),
+        TextSpan(text: topCategory.name.trim(), style: boldStyle),
         TextSpan(
             text:
-                '是本$periodName最大支出，占总支出的 ${(topCategory.shareOf(store.monthSpent) * 100).round()}%'),
+                '是本$periodName最大支出，占总支出的 ${currentExp == 0 ? 0 : ((topCategory.amount / currentExp) * 100).round()}%'),
       ]));
     }
     insights.add(TextSpan(
@@ -1070,6 +1404,40 @@ class _InsightsSummaryCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _SummaryTopCategory {
+  const _SummaryTopCategory({
+    required this.name,
+    required this.amount,
+  });
+
+  final String name;
+  final double amount;
+}
+
+_SummaryTopCategory? _buildSummaryTopCategory(
+  PocketMeowStore store,
+  List<ExpenseRecord> expenses,
+) {
+  if (expenses.isEmpty) {
+    return null;
+  }
+
+  final amountByCategory = <String, double>{};
+  for (final expense in expenses) {
+    amountByCategory[expense.categoryId] =
+        (amountByCategory[expense.categoryId] ?? 0) + expense.amount;
+  }
+
+  final topEntry = amountByCategory.entries.reduce(
+    (current, next) => current.value >= next.value ? current : next,
+  );
+  final category = store.categoryById(topEntry.key);
+  return _SummaryTopCategory(
+    name: category?.name ?? '未分类',
+    amount: topEntry.value,
+  );
 }
 
 class _LegendDot extends StatelessWidget {

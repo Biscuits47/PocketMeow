@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -7,7 +9,47 @@ import 'state/pocket_meow_store.dart';
 import '../features/add_expense/add_expense_sheet.dart';
 import '../features/data/data_page.dart';
 import '../features/records/records_page.dart';
+import '../features/settings/settings_page.dart';
 import 'theme/app_theme.dart';
+
+void _reportAppDebugEvent({
+  required String hypothesisId,
+  required String location,
+  required String message,
+  Map<String, Object?> data = const {},
+}) {
+  (() async {
+    var serverUrl = 'http://192.168.31.33:7777/event';
+    const sessionId = 'auto-bookkeeping-crash';
+    try {
+      final env = await File('.dbg/auto-bookkeeping-crash.env').readAsString();
+      for (final line in env.split('\n')) {
+        if (line.startsWith('DEBUG_SERVER_URL=')) {
+          serverUrl = line.substring('DEBUG_SERVER_URL='.length).trim();
+        }
+      }
+    } catch (_) {}
+    final client = HttpClient();
+    try {
+      final request = await client.postUrl(Uri.parse(serverUrl));
+      request.headers.contentType = ContentType.json;
+      request.write(jsonEncode({
+        'sessionId': sessionId,
+        'runId': 'post-fix',
+        'hypothesisId': hypothesisId,
+        'location': location,
+        'msg': '[DEBUG] $message',
+        'data': data,
+        'ts': DateTime.now().millisecondsSinceEpoch,
+      }));
+      final response = await request.close();
+      await response.drain<void>();
+    } catch (_) {
+    } finally {
+      client.close(force: true);
+    }
+  })();
+}
 
 class PocketMeowApp extends StatefulWidget {
   const PocketMeowApp({super.key});
@@ -36,6 +78,18 @@ class _PocketMeowAppState extends State<PocketMeowApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // #region debug-point A:lifecycle-resumed
+    _reportAppDebugEvent(
+      hypothesisId: 'A',
+      location: 'app.dart:didChangeAppLifecycleState',
+      message: 'App lifecycle changed',
+      data: {
+        'state': state.name,
+        'isReady': _store.isReady,
+        'autoBookkeepingEnabled': _store.isAutoBookkeepingEnabled,
+      },
+    );
+    // #endregion
     if (state != AppLifecycleState.resumed ||
         !_store.isReady ||
         !_store.isAutoBookkeepingEnabled) {
@@ -75,6 +129,7 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   int _currentIndex = 0;
+  bool _hasTriggeredStartupUpdateCheck = false;
 
   final List<Widget> _pages = const [
     RecordsPage(),
@@ -93,6 +148,21 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final store = PocketMeowScope.watch(context);
+
+    if (store.isReady && !_hasTriggeredStartupUpdateCheck) {
+      _hasTriggeredStartupUpdateCheck = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        unawaited(
+          checkForUpdatesAndPrompt(
+            context,
+            respectIgnoredRelease: true,
+          ),
+        );
+      });
+    }
 
     return Scaffold(
       extendBody: true,

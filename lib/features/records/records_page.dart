@@ -463,6 +463,9 @@ class RecordRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final sourceBadgeStyle = item.record.source == null
+        ? null
+        : _recordSourceBadgeStyle(item.record.source!);
 
     return InkWell(
       borderRadius: BorderRadius.circular(18),
@@ -502,14 +505,18 @@ class RecordRow extends StatelessWidget {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: AppTheme.mint.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(4),
+                            color: sourceBadgeStyle!.backgroundColor,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: sourceBadgeStyle.borderColor,
+                            ),
                           ),
                           child: Text(
                             item.record.source!.label,
                             style: theme.textTheme.bodySmall?.copyWith(
                               fontSize: 10,
-                              color: AppTheme.mintDeep,
+                              fontWeight: FontWeight.w600,
+                              color: sourceBadgeStyle.textColor,
                             ),
                           ),
                         ),
@@ -559,6 +566,35 @@ class RecordRow extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _RecordSourceBadgeStyle {
+  const _RecordSourceBadgeStyle({
+    required this.backgroundColor,
+    required this.borderColor,
+    required this.textColor,
+  });
+
+  final Color backgroundColor;
+  final Color borderColor;
+  final Color textColor;
+}
+
+_RecordSourceBadgeStyle _recordSourceBadgeStyle(RecordSource source) {
+  switch (source) {
+    case RecordSource.autoAlipay:
+      return const _RecordSourceBadgeStyle(
+        backgroundColor: Color(0x14207EFF),
+        borderColor: Color(0x33207EFF),
+        textColor: Color(0xFF1677FF),
+      );
+    case RecordSource.autoWeChat:
+      return const _RecordSourceBadgeStyle(
+        backgroundColor: Color(0x1432C25B),
+        borderColor: Color(0x3332C25B),
+        textColor: Color(0xFF1AAD19),
+      );
   }
 }
 
@@ -631,18 +667,16 @@ class _SearchShortcut extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: onTap,
-      child: Ink(
-        width: 42,
-        height: 42,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFE6EBEE)),
-        ),
-        child: const Icon(Icons.search_rounded),
+    return IconButton(
+      onPressed: onTap,
+      icon: const Icon(Icons.search_rounded),
+      splashRadius: 20,
+      color: AppTheme.ink,
+      tooltip: '搜索',
+      style: IconButton.styleFrom(
+        minimumSize: const Size(40, 40),
+        padding: EdgeInsets.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
     );
   }

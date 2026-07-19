@@ -76,6 +76,7 @@ class ExpenseRecord {
     required this.type,
     this.excludeFromBudget = false,
     this.source,
+    this.isManuallyEdited = false,
   });
 
   final String id;
@@ -86,6 +87,7 @@ class ExpenseRecord {
   final RecordType type;
   final bool excludeFromBudget;
   final RecordSource? source;
+  final bool isManuallyEdited;
 
   ExpenseRecord copyWith({
     String? id,
@@ -96,6 +98,7 @@ class ExpenseRecord {
     RecordType? type,
     bool? excludeFromBudget,
     RecordSource? source,
+    bool? isManuallyEdited,
   }) {
     return ExpenseRecord(
       id: id ?? this.id,
@@ -106,6 +109,7 @@ class ExpenseRecord {
       type: type ?? this.type,
       excludeFromBudget: excludeFromBudget ?? this.excludeFromBudget,
       source: source ?? this.source,
+      isManuallyEdited: isManuallyEdited ?? this.isManuallyEdited,
     );
   }
 
@@ -119,6 +123,7 @@ class ExpenseRecord {
       'type': type.key,
       'excludeFromBudget': excludeFromBudget,
       'source': source?.key,
+      'isManuallyEdited': isManuallyEdited,
     };
   }
 
@@ -132,6 +137,7 @@ class ExpenseRecord {
       type: RecordTypeX.fromKey(json['type'] as String?),
       excludeFromBudget: json['excludeFromBudget'] as bool? ?? false,
       source: RecordSourceX.fromKey(json['source'] as String?),
+      isManuallyEdited: json['isManuallyEdited'] as bool? ?? false,
     );
   }
 }
