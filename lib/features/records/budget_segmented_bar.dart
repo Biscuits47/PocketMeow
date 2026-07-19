@@ -17,14 +17,16 @@ class BudgetSegmentedBar extends StatelessWidget {
     required this.segments,
     this.height = 10,
     this.backgroundColor = const Color(0x26FFFFFF),
-    this.showOverflowIndicator = true,
+    this.overflowRatio = 0,
+    this.overflowColor = const Color(0xFFFF4D4F),
   });
 
   final double totalBudget;
   final List<BudgetSegment> segments;
   final double height;
   final Color backgroundColor;
-  final bool showOverflowIndicator;
+  final double overflowRatio;
+  final Color overflowColor;
 
   @override
   Widget build(BuildContext context) {
@@ -34,9 +36,10 @@ class BudgetSegmentedBar extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        final fillRatio = totalBudget <= 0 ? 0.0 : (totalConsumed / totalBudget);
+        final fillRatio =
+            totalBudget <= 0 ? 0.0 : (totalConsumed / totalBudget);
         final filledWidth = (fillRatio.clamp(0.0, 1.0)) * width;
-        final isOverflow = fillRatio > 1.0;
+        final reverseOverflowWidth = overflowRatio.clamp(0.0, 1.0) * width;
 
         final segmentWidgets = <Widget>[];
         var left = 0.0;
@@ -65,15 +68,24 @@ class BudgetSegmentedBar extends StatelessWidget {
           left += segmentWidth;
         }
 
-        if (showOverflowIndicator && isOverflow) {
+        if (reverseOverflowWidth > 0) {
           segmentWidgets.add(
             Positioned(
               right: 0,
               top: 0,
               bottom: 0,
               child: Container(
-                width: 4,
-                color: const Color(0xFFFF4D4F),
+                width: reverseOverflowWidth,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      overflowColor.withValues(alpha: 0.6),
+                      overflowColor,
+                    ],
+                  ),
+                ),
               ),
             ),
           );
@@ -95,4 +107,3 @@ class BudgetSegmentedBar extends StatelessWidget {
     );
   }
 }
-

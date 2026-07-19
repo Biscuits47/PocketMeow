@@ -65,6 +65,11 @@ class _RecordsPageState extends State<RecordsPage> {
     final periodBuckets = store.budgetBucketsFor(now);
     final actualBalance = periodBudget - actualMonthSpentForBudget;
     final budgetBalanceLabel = actualBalance >= 0 ? '预算结余' : '预算超支';
+    final overflowAmount = actualMonthSpentForBudget > periodBudget
+        ? actualMonthSpentForBudget - periodBudget
+        : 0.0;
+    final overflowRatio =
+        periodBudget <= 0 ? 0.0 : (overflowAmount / periodBudget);
 
     final consumedByBucket = <String, double>{};
     for (final bucket in periodBuckets) {
@@ -81,12 +86,27 @@ class _RecordsPageState extends State<RecordsPage> {
           (consumedByBucket[bucketId] ?? 0) + record.amount;
     }
 
-    final segments = periodBuckets
-        .map((bucket) => BudgetSegment(
-              color: Color(bucket.colorValue),
-              amount: consumedByBucket[bucket.id] ?? 0,
-            ))
-        .where((segment) => segment.amount > 0)
+    final sortedBucketProgress = periodBuckets
+        .map(
+          (bucket) => _BudgetBarBucketProgress(
+            color: Color(bucket.colorValue),
+            consumed: consumedByBucket[bucket.id] ?? 0,
+            ratio: bucket.limitValue <= 0
+                ? ((consumedByBucket[bucket.id] ?? 0) > 0 ? 999999.0 : 0.0)
+                : (consumedByBucket[bucket.id] ?? 0) / bucket.limitValue,
+          ),
+        )
+        .where((item) => item.consumed > 0)
+        .toList()
+      ..sort((a, b) {
+        final ratioOrder = b.ratio.compareTo(a.ratio);
+        if (ratioOrder != 0) {
+          return ratioOrder;
+        }
+        return b.consumed.compareTo(a.consumed);
+      });
+    final segments = sortedBucketProgress
+        .map((item) => BudgetSegment(color: item.color, amount: item.consumed))
         .toList();
 
     return SafeArea(
@@ -132,6 +152,7 @@ class _RecordsPageState extends State<RecordsPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Expanded(
                                 child: Column(
@@ -179,22 +200,32 @@ class _RecordsPageState extends State<RecordsPage> {
                                   ],
                                 ),
                               ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                onPressed: () => showBudgetManagerSheet(
+                                  context,
+                                  initialDate: now,
+                                ),
+                                icon: const Icon(Icons.view_headline_rounded),
+                                color: Colors.white.withValues(alpha: 0.82),
+                                tooltip: '预算管理',
+                                style: IconButton.styleFrom(
+                                  minimumSize: const Size(40, 40),
+                                  padding: EdgeInsets.zero,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 18),
-                          GestureDetector(
-                            onTap: () => showBudgetManagerSheet(
-                              context,
-                              initialDate: now,
-                            ),
-                            behavior: HitTestBehavior.opaque,
-                            child: BudgetSegmentedBar(
-                              totalBudget: periodBudget,
-                              segments: segments,
-                              height: 10,
-                              backgroundColor:
-                                  Colors.white.withValues(alpha: 0.10),
-                            ),
+                          BudgetSegmentedBar(
+                            totalBudget: periodBudget,
+                            segments: segments,
+                            overflowRatio: overflowRatio,
+                            height: 10,
+                            backgroundColor:
+                                Colors.white.withValues(alpha: 0.10),
                           ),
                           const SizedBox(height: 20),
                           Row(
@@ -258,49 +289,48 @@ class _RecordsPageState extends State<RecordsPage> {
                                       ],
                                     ),
                                     const SizedBox(height: 6),
-                                    Text(
-                                      _isIncomeVisible
-                                          ? formatShortCurrency(
-                                              actualMonthIncome)
-                                          : '****',
-                                      style:
-                                          theme.textTheme.titleMedium?.copyWith(
-                                        color: Colors.white,
+                                    GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: () {
+                                        setState(() {
+                                          _isIncomeVisible = !_isIncomeVisible;
+                                        });
+                                      },
+                                      child: Text(
+                                        _isIncomeVisible
+                                            ? formatShortCurrency(
+                                                actualMonthIncome)
+                                            : '****',
+                                        style: theme.textTheme.titleMedium
+                                            ?.copyWith(
+                                          color: Colors.white,
+                                        ),
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
                               Expanded(
-                                child: GestureDetector(
-                                  onTap: () => showBudgetManagerSheet(
-                                    context,
-                                    initialDate: now,
-                                  ),
-                                  behavior: HitTestBehavior.opaque,
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        budgetBalanceLabel,
-                                        style:
-                                            theme.textTheme.bodySmall?.copyWith(
-                                          color: Colors.white
-                                              .withValues(alpha: 0.58),
-                                        ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      budgetBalanceLabel,
+                                      style:
+                                          theme.textTheme.bodySmall?.copyWith(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.58),
                                       ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        formatShortCurrency(
-                                            actualBalance.abs()),
-                                        style: theme.textTheme.titleMedium
-                                            ?.copyWith(
-                                          color: Colors.white,
-                                        ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      formatShortCurrency(actualBalance.abs()),
+                                      style:
+                                          theme.textTheme.titleMedium?.copyWith(
+                                        color: Colors.white,
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -338,6 +368,18 @@ class _RecordsPageState extends State<RecordsPage> {
       ),
     );
   }
+}
+
+class _BudgetBarBucketProgress {
+  const _BudgetBarBucketProgress({
+    required this.color,
+    required this.consumed,
+    required this.ratio,
+  });
+
+  final Color color;
+  final double consumed;
+  final double ratio;
 }
 
 class _DaySection extends StatelessWidget {

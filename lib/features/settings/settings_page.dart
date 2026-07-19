@@ -976,7 +976,11 @@ Future<void> _showUpdateResultDialog(
 }) {
   final releaseNotes =
       info.releaseNotes.isEmpty ? '这次更新暂未填写说明。' : info.releaseNotes;
-  final downloadLabel = info.downloadUrl == null ? '查看详情' : '下载更新';
+  final isSameRelease = info.latestVersion == info.currentVersion &&
+      info.latestBuild == info.currentBuild;
+  final canDownloadCurrentRelease = info.hasUpdate || isSameRelease;
+  final downloadLabel =
+      info.downloadUrl == null ? '查看详情' : (info.hasUpdate ? '下载更新' : '重新下载');
   final hasDownloadableApk =
       info.downloadUrl != null && info.downloadUrl!.endsWith('.apk');
   return showDialog<void>(
@@ -1002,13 +1006,15 @@ Future<void> _showUpdateResultDialog(
               Text(
                 info.hasUpdate
                     ? '检测到新版本，可以直接从版本清单里的下载地址获取最新 APK。'
-                    : '当前安装版本已经不低于版本清单中的最新版本。',
+                    : (isSameRelease
+                        ? '当前安装版本与版本清单一致，你仍然可以重新下载这个版本的 APK。'
+                        : '当前安装版本已经不低于版本清单中的最新版本。'),
               ),
               if (info.hasUpdate && isIgnored) ...[
                 const SizedBox(height: 10),
                 const Text('这个版本的启动提醒已被忽略，但你仍然可以在这里手动下载更新。'),
               ],
-              if (info.hasUpdate && !hasDownloadableApk) ...[
+              if (canDownloadCurrentRelease && !hasDownloadableApk) ...[
                 const SizedBox(height: 10),
                 const Text('当前版本清单里没有直接 APK 下载地址，将为你打开发布详情页。'),
               ],
@@ -1048,7 +1054,7 @@ Future<void> _showUpdateResultDialog(
             onPressed: () => Navigator.of(dialogContext).pop(),
             child: Text(info.hasUpdate ? '稍后' : '关闭'),
           ),
-          if (info.hasUpdate)
+          if (canDownloadCurrentRelease)
             FilledButton(
               onPressed: () async {
                 await _appUpdateService.clearIgnoredRelease();

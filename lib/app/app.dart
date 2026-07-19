@@ -130,11 +130,8 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   int _currentIndex = 0;
   bool _hasTriggeredStartupUpdateCheck = false;
-
-  final List<Widget> _pages = const [
-    RecordsPage(),
-    DataPage(),
-  ];
+  bool _hasPlayedDataIntroAnimation = false;
+  int _dataIntroAnimationToken = 0;
 
   void _openAddExpense() {
     showModalBottomSheet<void>(
@@ -169,7 +166,10 @@ class _AppShellState extends State<AppShell> {
       body: store.isReady
           ? IndexedStack(
               index: _currentIndex,
-              children: _pages,
+              children: [
+                const RecordsPage(),
+                DataPage(introAnimationToken: _dataIntroAnimationToken),
+              ],
             )
           : const Center(
               child: CircularProgressIndicator(
@@ -196,6 +196,10 @@ class _AppShellState extends State<AppShell> {
           selectedIndex: _currentIndex,
           onDestinationSelected: (index) {
             setState(() {
+              if (index == 1 && !_hasPlayedDataIntroAnimation) {
+                _hasPlayedDataIntroAnimation = true;
+                _dataIntroAnimationToken++;
+              }
               _currentIndex = index;
             });
           },

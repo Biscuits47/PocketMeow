@@ -12,14 +12,45 @@ import '../records/records_page.dart';
 import '../settings/settings_page.dart';
 
 class DataPage extends StatefulWidget {
-  const DataPage({super.key});
+  const DataPage({
+    super.key,
+    this.introAnimationToken = 0,
+  });
+
+  final int introAnimationToken;
 
   @override
   State<DataPage> createState() => _DataPageState();
 }
 
-class _DataPageState extends State<DataPage> {
+class _DataPageState extends State<DataPage>
+    with SingleTickerProviderStateMixin {
   RecordType _chartType = RecordType.expense;
+  late final AnimationController _pieIntroController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pieIntroController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1450),
+      value: 1,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant DataPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.introAnimationToken != oldWidget.introAnimationToken) {
+      _pieIntroController.forward(from: 0.0001);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pieIntroController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -71,7 +102,11 @@ class _DataPageState extends State<DataPage> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
               children: [
-                _SpendingDistributionCard(store: store, type: _chartType),
+                _SpendingDistributionCard(
+                  store: store,
+                  type: _chartType,
+                  introAnimation: _pieIntroController,
+                ),
                 const SizedBox(height: 16),
                 _TrendCard(store: store, type: _chartType),
                 const SizedBox(height: 16),
@@ -351,10 +386,15 @@ class _SettingsShortcut extends StatelessWidget {
 }
 
 class _SpendingDistributionCard extends StatelessWidget {
-  const _SpendingDistributionCard({required this.store, required this.type});
+  const _SpendingDistributionCard({
+    required this.store,
+    required this.type,
+    required this.introAnimation,
+  });
 
   final PocketMeowStore store;
   final RecordType type;
+  final Animation<double> introAnimation;
 
   @override
   Widget build(BuildContext context) {
@@ -436,6 +476,7 @@ class _SpendingDistributionCard extends StatelessWidget {
                       items: pieItems,
                       total: total,
                       typeName: typeName,
+                      introAnimation: introAnimation,
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -492,7 +533,7 @@ class _SpendingDistributionCard extends StatelessWidget {
                                             BorderRadius.circular(999),
                                         child: LinearProgressIndicator(
                                           value: item.shareOf(total),
-                                          minHeight: 4,
+                                          minHeight: 6,
                                           backgroundColor:
                                               const Color(0xFFF1F4F6),
                                           valueColor: AlwaysStoppedAnimation<
@@ -555,28 +596,40 @@ class _PieDistributionChart extends StatelessWidget {
     required this.items,
     required this.total,
     required this.typeName,
+    required this.introAnimation,
   });
 
   final List<CategorySpendData> items;
   final double total;
   final String typeName;
+  final Animation<double> introAnimation;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final textDirection = Directionality.of(context);
     final maxAmount = items.fold<double>(
       0,
       (currentMax, item) => max(currentMax, item.amount),
     );
+    final labelStyle = theme.textTheme.bodySmall?.copyWith(
+          color: const Color(0xFF5E656B),
+          height: 1.0,
+        ) ??
+        const TextStyle(
+          fontSize: 12,
+          color: Color(0xFF5E656B),
+          height: 1.0,
+        );
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final chartSize = min(136.0, max(116.0, constraints.maxWidth * 0.27));
-        final chartCenter = Offset(
-          constraints.maxWidth / 2,
-          constraints.maxHeight / 2,
+        final labelEntries = _buildPieLabelEntries(
+          items,
+          total,
+          baseLabelStyle: labelStyle,
+          textDirection: textDirection,
         );
-        final labelEntries = _buildPieLabelEntries(items, total);
         final leftEntries = labelEntries
             .where((entry) => !entry.isRightSide)
             .toList()
@@ -585,6 +638,20 @@ class _PieDistributionChart extends StatelessWidget {
             .where((entry) => entry.isRightSide)
             .toList()
           ..sort((a, b) => a.anchorY.compareTo(b.anchorY));
+        final dominantShare = total <= 0 ? 0.0 : (maxAmount / total);
+        final useCompactLeaderLayout = dominantShare >= 0.68 &&
+            max(leftEntries.length, rightEntries.length) >= 3;
+        final baseChartSize =
+            min(136.0, max(116.0, constraints.maxWidth * 0.27));
+        final chartSize = useCompactLeaderLayout
+            ? max(108.0, baseChartSize - 8.0)
+            : baseChartSize;
+        final centerSpaceRadius =
+            chartSize * (useCompactLeaderLayout ? 0.38 : 0.36);
+        final chartCenter = Offset(
+          constraints.maxWidth / 2,
+          constraints.maxHeight / 2,
+        );
 
         final layouts = [
           ..._buildLeaderLayouts(
@@ -593,7 +660,9 @@ class _PieDistributionChart extends StatelessWidget {
             size: constraints.biggest,
             center: chartCenter,
             chartSize: chartSize,
+            totalAmount: total,
             maxAmount: maxAmount,
+            useCompactLayout: useCompactLeaderLayout,
           ),
           ..._buildLeaderLayouts(
             entries: rightEntries,
@@ -601,93 +670,231 @@ class _PieDistributionChart extends StatelessWidget {
             size: constraints.biggest,
             center: chartCenter,
             chartSize: chartSize,
+            totalAmount: total,
             maxAmount: maxAmount,
+            useCompactLayout: useCompactLeaderLayout,
           ),
         ];
 
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Positioned.fill(
-              child: CustomPaint(
-                painter: _PieLeaderLinesPainter(layouts: layouts),
-              ),
-            ),
-            Positioned(
-              left: chartCenter.dx - chartSize / 2,
-              top: chartCenter.dy - chartSize / 2,
-              width: chartSize,
-              height: chartSize,
+        return AnimatedBuilder(
+          animation: introAnimation,
+          builder: (context, _) {
+            final amountReveal = Curves.easeOutCubic.transform(
+              introAnimation.value.clamp(0.0, 1.0),
+            );
+            return RepaintBoundary(
               child: Stack(
-                alignment: Alignment.center,
+                clipBehavior: Clip.none,
                 children: [
-                  PieChart(
-                    PieChartData(
-                      startDegreeOffset: -90,
-                      centerSpaceRadius: chartSize * 0.34,
-                      sectionsSpace: 2,
-                      sections: items.map(
-                        (item) {
-                          final isPrimarySlice =
-                              maxAmount > 0 && item.amount == maxAmount;
-                          return PieChartSectionData(
-                            color: Color(item.category.colorValue),
-                            value: item.amount,
-                            radius: chartSize * (isPrimarySlice ? 0.32 : 0.28),
-                            title: '',
-                          );
-                        },
-                      ).toList(),
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: _PieLeaderLinesPainter(
+                        layouts: layouts,
+                        animationValue: introAnimation.value,
+                      ),
                     ),
                   ),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        typeName,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: AppTheme.muted,
+                  Positioned(
+                    left: chartCenter.dx - chartSize / 2,
+                    top: chartCenter.dy - chartSize / 2,
+                    width: chartSize,
+                    height: chartSize,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        PieChart(
+                          PieChartData(
+                            startDegreeOffset: -90,
+                            centerSpaceRadius: centerSpaceRadius,
+                            sectionsSpace: useCompactLeaderLayout ? 1.6 : 2,
+                            sections: items.asMap().entries.map(
+                              (entry) {
+                                final itemIndex = entry.key;
+                                final item = entry.value;
+                                final valueReveal =
+                                    _staggeredPieSectionRevealProgress(
+                                  index: itemIndex,
+                                  totalCount: items.length,
+                                  animationValue: introAnimation.value,
+                                );
+                                final radiusReveal =
+                                    _staggeredPieRadiusRevealProgress(
+                                  index: itemIndex,
+                                  totalCount: items.length,
+                                  animationValue: introAnimation.value,
+                                );
+                                final isPrimarySlice =
+                                    maxAmount > 0 && item.amount == maxAmount;
+                                final baseRadius = chartSize *
+                                    (useCompactLeaderLayout
+                                        ? (isPrimarySlice ? 0.30 : 0.26)
+                                        : (isPrimarySlice ? 0.32 : 0.28));
+                                return PieChartSectionData(
+                                  color: _rankedPieBlendColor(
+                                    baseColor: Color(item.category.colorValue),
+                                    index: itemIndex,
+                                    totalCount: items.length,
+                                  ).withValues(alpha: valueReveal),
+                                  value: item.amount * valueReveal,
+                                  radius: baseRadius *
+                                      (0.76 + (radiusReveal * 0.24)),
+                                  title: '',
+                                );
+                              },
+                            ).toList(),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        formatChartAmount(total),
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
+                        _PieCenterBadge(
+                          typeName: typeName,
+                          amountText: formatChartAmount(total * amountReveal),
+                          revealProgress: amountReveal,
+                          diameter: centerSpaceRadius * 2,
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
+                  ),
+                  ...layouts.map(
+                    (layout) {
+                      final textReveal = _staggeredPieLabelRevealProgress(
+                        index: layout.entry.rankIndex,
+                        totalCount: items.length,
+                        animationValue: introAnimation.value,
+                      );
+                      return Positioned(
+                        left: layout.labelLeft,
+                        top: layout.labelTop,
+                        width: layout.labelWidth,
+                        height: layout.labelHeight,
+                        child: Align(
+                          alignment: layout.alignRight
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
+                          child: Text(
+                            layout.entry.labelText,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: layout.alignRight
+                                ? TextAlign.right
+                                : TextAlign.left,
+                            style: layout.entry.labelStyle.copyWith(
+                              color: (layout.entry.labelStyle.color ??
+                                      const Color(0xFF5E656B))
+                                  .withValues(alpha: textReveal),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _PieCenterBadge extends StatelessWidget {
+  const _PieCenterBadge({
+    required this.typeName,
+    required this.amountText,
+    required this.revealProgress,
+    required this.diameter,
+  });
+
+  final String typeName;
+  final String amountText;
+  final double revealProgress;
+  final double diameter;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final clampedReveal = revealProgress.clamp(0.0, 1.0);
+    final badgeSize = diameter * 0.9;
+    final horizontalPadding = max(8.0, badgeSize * 0.12);
+
+    return SizedBox(
+      width: badgeSize,
+      height: badgeSize,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFFFFFFFF),
+              Color(0xFFF6F8FA),
+            ],
+          ),
+          border: Border.all(
+            color: const Color(0xFFFFFFFF).withValues(alpha: 0.92),
+            width: 1.1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06 * clampedReveal),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
             ),
-            ...layouts.map(
-              (layout) => Positioned(
-                left: layout.labelLeft,
-                top: layout.labelTop,
-                width: layout.labelWidth,
-                height: layout.labelHeight,
-                child: Align(
-                  alignment: layout.alignRight
-                      ? Alignment.centerRight
-                      : Alignment.centerLeft,
+          ],
+        ),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalPadding,
+            vertical: max(7.0, badgeSize * 0.14),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                typeName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: 11,
+                  letterSpacing: 0.2,
+                  color: AppTheme.muted.withValues(
+                    alpha: 0.7 + (clampedReveal * 0.3),
+                  ),
+                ),
+              ),
+              SizedBox(height: max(4.0, badgeSize * 0.04)),
+              Container(
+                width: badgeSize * 0.26,
+                height: 1.4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD7DEE4).withValues(
+                    alpha: 0.65 + (clampedReveal * 0.35),
+                  ),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              SizedBox(height: max(5.0, badgeSize * 0.06)),
+              SizedBox(
+                width: badgeSize - horizontalPadding * 2,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
                   child: Text(
-                    '${layout.entry.item.category.name} ${layout.entry.percentText}%',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign:
-                        layout.alignRight ? TextAlign.right : TextAlign.left,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFF5E656B),
-                      height: 1.25,
+                    amountText,
+                    maxLines: 1,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.2,
+                      color: AppTheme.ink.withValues(
+                        alpha: 0.82 + (clampedReveal * 0.18),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
-        );
-      },
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -698,27 +905,31 @@ List<_PieLeaderLayout> _buildLeaderLayouts({
   required Size size,
   required Offset center,
   required double chartSize,
+  required double totalAmount,
   required double maxAmount,
+  required bool useCompactLayout,
 }) {
   if (entries.isEmpty) {
     return const [];
   }
 
-  const labelHeight = 34.0;
-  const minLabelGap = 10.0;
-  const verticalPadding = 18.0;
-  const normalSegmentLength = 36.0;
-  const horizontalSegmentLength = 12.0;
-  const labelGap = 8.0;
-
-  final minCenterY = verticalPadding + labelHeight / 2;
-  final maxCenterY = size.height - verticalPadding - labelHeight / 2;
+  final baseMinLabelGap = useCompactLayout ? 4.0 : 6.0;
+  final verticalPadding = useCompactLayout ? 14.0 : 18.0;
+  final normalSegmentLength = useCompactLayout ? 12.0 : 20.0;
+  final horizontalSegmentLength = useCompactLayout ? 8.0 : 10.0;
+  final labelGap = useCompactLayout ? 4.0 : 6.0;
+  final centerGap = max(useCompactLayout ? 14.0 : 12.0,
+      chartSize * (useCompactLayout ? 0.10 : 0.08));
   final desiredLayouts = <_PieLeaderLayout>[];
 
   for (final entry in entries) {
     final isPrimarySlice = maxAmount > 0 && entry.item.amount == maxAmount;
-    final sectionRadius = chartSize * (isPrimarySlice ? 0.32 : 0.28);
-    final outerRadius = (chartSize * 0.34) + sectionRadius;
+    final sectionRadius = chartSize *
+        (useCompactLayout
+            ? (isPrimarySlice ? 0.30 : 0.26)
+            : (isPrimarySlice ? 0.32 : 0.28));
+    final outerRadius =
+        (chartSize * (useCompactLayout ? 0.38 : 0.36)) + sectionRadius;
     final radialUnit = Offset(cos(entry.angleRadians), sin(entry.angleRadians));
 
     final start = Offset(
@@ -731,9 +942,15 @@ List<_PieLeaderLayout> _buildLeaderLayouts({
       start.dy + radialUnit.dy * normalSegmentLength,
     );
 
-    final lineEndX = isRightSide
+    final safeBoundaryX = isRightSide
+        ? center.dx + outerRadius + (useCompactLayout ? 14.0 : 10.0)
+        : center.dx - outerRadius - (useCompactLayout ? 14.0 : 10.0);
+    final rawLineEndX = isRightSide
         ? elbow.dx + horizontalSegmentLength
         : elbow.dx - horizontalSegmentLength;
+    final lineEndX = isRightSide
+        ? max(rawLineEndX, safeBoundaryX)
+        : min(rawLineEndX, safeBoundaryX);
     final labelLeft = isRightSide ? lineEndX + labelGap : 0.0;
     final labelWidth = isRightSide
         ? max(10.0, size.width - labelLeft)
@@ -745,94 +962,325 @@ List<_PieLeaderLayout> _buildLeaderLayouts({
         alignRight: !isRightSide,
         start: start,
         bend: elbow,
-        labelY: elbow.dy.clamp(minCenterY, maxCenterY),
+        labelY: elbow.dy.clamp(
+          verticalPadding + entry.labelHeight / 2,
+          size.height - verticalPadding - entry.labelHeight / 2,
+        ),
         lineEndX: lineEndX,
         labelLeft: labelLeft,
         labelTop: 0,
-        labelHeight: labelHeight,
+        labelHeight: entry.labelHeight,
         labelWidth: labelWidth,
       ),
     );
   }
 
-  for (var index = 1; index < desiredLayouts.length; index++) {
-    final previous = desiredLayouts[index - 1];
-    final current = desiredLayouts[index];
-    final minCurrentY = previous.labelY + labelHeight + minLabelGap;
-    if (current.labelY < minCurrentY) {
-      desiredLayouts[index] =
-          current.copyWith(labelY: min(minCurrentY, maxCenterY));
+  final upperIndexes = <int>[];
+  final lowerIndexes = <int>[];
+
+  for (var index = 0; index < desiredLayouts.length; index++) {
+    if (desiredLayouts[index].entry.anchorY < 0) {
+      upperIndexes.add(index);
+    } else {
+      lowerIndexes.add(index);
     }
   }
 
-  for (var index = desiredLayouts.length - 2; index >= 0; index--) {
-    final next = desiredLayouts[index + 1];
+  final upperMaxLabelHeight = upperIndexes.isEmpty
+      ? 0.0
+      : upperIndexes
+          .map((index) => desiredLayouts[index].labelHeight)
+          .reduce(max);
+  final lowerMaxLabelHeight = lowerIndexes.isEmpty
+      ? 0.0
+      : lowerIndexes
+          .map((index) => desiredLayouts[index].labelHeight)
+          .reduce(max);
+
+  final upperMinCenterY = verticalPadding + upperMaxLabelHeight / 2;
+  final upperMaxCenterY = max(
+    upperMinCenterY,
+    center.dy - centerGap - upperMaxLabelHeight / 2,
+  );
+  final upperLabelGap = _resolveLeaderLabelGap(
+    count: upperIndexes.length,
+    minCenterY: upperMinCenterY,
+    maxCenterY: upperMaxCenterY,
+    labelExtent: upperMaxLabelHeight,
+    preferredGap: baseMinLabelGap,
+  );
+  for (var position = upperIndexes.length - 1; position >= 0; position--) {
+    final index = upperIndexes[position];
     final current = desiredLayouts[index];
-    final maxCurrentY = next.labelY - labelHeight - minLabelGap;
-    if (current.labelY > maxCurrentY) {
-      desiredLayouts[index] =
-          current.copyWith(labelY: max(maxCurrentY, minCenterY));
+    final minCurrentY = verticalPadding + current.labelHeight / 2;
+    final currentUpperMaxY = center.dy - centerGap - current.labelHeight / 2;
+    var targetY = min(current.labelY, upperMaxCenterY);
+    if (position < upperIndexes.length - 1) {
+      final next = desiredLayouts[upperIndexes[position + 1]];
+      final maxAllowedY = next.labelY -
+          (next.labelHeight / 2) -
+          (current.labelHeight / 2) -
+          upperLabelGap;
+      targetY = min(targetY, maxAllowedY);
     }
+    desiredLayouts[index] = current.copyWith(
+      labelY: max(minCurrentY, min(targetY, currentUpperMaxY)),
+    );
+  }
+  if (_shouldRedistributeLeaderGroup(
+    layouts: desiredLayouts,
+    indexes: upperIndexes,
+    topBoundary: verticalPadding,
+    bottomBoundary: center.dy - centerGap,
+    preferredGap: upperLabelGap,
+  )) {
+    _redistributeLeaderGroup(
+      layouts: desiredLayouts,
+      indexes: upperIndexes,
+      topBoundary: verticalPadding,
+      bottomBoundary: center.dy - centerGap,
+      preferredGap: upperLabelGap,
+      anchorToBottom: true,
+    );
   }
 
-  return desiredLayouts
-      .map(
-        (layout) => layout.copyWith(
-          labelY: layout.bend.dy,
-          labelTop: layout.bend.dy - labelHeight / 2,
-          labelHeight: labelHeight,
-        ),
-      )
-      .toList(growable: false);
+  final lowerMaxCenterY =
+      size.height - verticalPadding - lowerMaxLabelHeight / 2;
+  final lowerMinCenterY = min(
+    lowerMaxCenterY,
+    center.dy + centerGap + lowerMaxLabelHeight / 2,
+  );
+  final lowerLabelGap = _resolveLeaderLabelGap(
+    count: lowerIndexes.length,
+    minCenterY: lowerMinCenterY,
+    maxCenterY: lowerMaxCenterY,
+    labelExtent: lowerMaxLabelHeight,
+    preferredGap: baseMinLabelGap,
+  );
+  for (var position = 0; position < lowerIndexes.length; position++) {
+    final index = lowerIndexes[position];
+    final current = desiredLayouts[index];
+    final maxCurrentY = size.height - verticalPadding - current.labelHeight / 2;
+    final currentLowerMinY = center.dy + centerGap + current.labelHeight / 2;
+    var targetY = max(current.labelY, lowerMinCenterY);
+    if (position > 0) {
+      final previous = desiredLayouts[lowerIndexes[position - 1]];
+      final minAllowedY = previous.labelY +
+          (previous.labelHeight / 2) +
+          (current.labelHeight / 2) +
+          lowerLabelGap;
+      targetY = max(targetY, minAllowedY);
+    }
+    desiredLayouts[index] = current.copyWith(
+      labelY: min(maxCurrentY, max(targetY, currentLowerMinY)),
+    );
+  }
+  if (_shouldRedistributeLeaderGroup(
+    layouts: desiredLayouts,
+    indexes: lowerIndexes,
+    topBoundary: center.dy + centerGap,
+    bottomBoundary: size.height - verticalPadding,
+    preferredGap: lowerLabelGap,
+  )) {
+    _redistributeLeaderGroup(
+      layouts: desiredLayouts,
+      indexes: lowerIndexes,
+      topBoundary: center.dy + centerGap,
+      bottomBoundary: size.height - verticalPadding,
+      preferredGap: lowerLabelGap,
+      anchorToBottom: false,
+    );
+  }
+
+  return desiredLayouts.map(
+    (layout) {
+      final adjustedBend = Offset(layout.bend.dx, layout.labelY);
+      return layout.copyWith(
+        bend: adjustedBend,
+        labelTop: layout.labelY - layout.labelHeight / 2,
+      );
+    },
+  ).toList(growable: false);
+}
+
+double _resolveLeaderLabelGap({
+  required int count,
+  required double minCenterY,
+  required double maxCenterY,
+  required double labelExtent,
+  required double preferredGap,
+}) {
+  if (count <= 1) {
+    return preferredGap;
+  }
+
+  final availableSpan = max(0.0, maxCenterY - minCenterY);
+  final maxGapThatFits = (availableSpan / (count - 1)) - labelExtent;
+  return max(2.0, min(preferredGap, maxGapThatFits));
+}
+
+bool _shouldRedistributeLeaderGroup({
+  required List<_PieLeaderLayout> layouts,
+  required List<int> indexes,
+  required double topBoundary,
+  required double bottomBoundary,
+  required double preferredGap,
+}) {
+  if (indexes.length < 3) {
+    return false;
+  }
+
+  final availableSpan = max(0.0, bottomBoundary - topBoundary);
+  final totalLabelHeights = indexes.fold<double>(
+    0.0,
+    (sum, index) => sum + layouts[index].labelHeight,
+  );
+  final preferredSpan = totalLabelHeights + preferredGap * (indexes.length - 1);
+  final currentSpan =
+      layouts[indexes.last].labelY - layouts[indexes.first].labelY;
+  return preferredSpan > (availableSpan * 0.8) ||
+      currentSpan < (preferredSpan * 0.8);
+}
+
+void _redistributeLeaderGroup({
+  required List<_PieLeaderLayout> layouts,
+  required List<int> indexes,
+  required double topBoundary,
+  required double bottomBoundary,
+  required double preferredGap,
+  required bool anchorToBottom,
+}) {
+  if (indexes.isEmpty) {
+    return;
+  }
+
+  final availableSpan = max(0.0, bottomBoundary - topBoundary);
+  final totalLabelHeights = indexes.fold<double>(
+    0.0,
+    (sum, index) => sum + layouts[index].labelHeight,
+  );
+  final fittingGap = indexes.length > 1
+      ? max(1.0, (availableSpan - totalLabelHeights) / (indexes.length - 1))
+      : 0.0;
+  final resolvedGap =
+      indexes.length > 1 ? max(1.0, min(preferredGap, fittingGap)) : 0.0;
+  final totalUsed =
+      totalLabelHeights + resolvedGap * max(0, indexes.length - 1);
+
+  var currentTop = anchorToBottom
+      ? max(topBoundary, bottomBoundary - totalUsed)
+      : topBoundary;
+
+  for (final index in indexes) {
+    final current = layouts[index];
+    final centerY = currentTop + current.labelHeight / 2;
+    layouts[index] = current.copyWith(labelY: centerY);
+    currentTop += current.labelHeight + resolvedGap;
+  }
 }
 
 class _PieLeaderLinesPainter extends CustomPainter {
   const _PieLeaderLinesPainter({
     required this.layouts,
+    required this.animationValue,
   });
 
   final List<_PieLeaderLayout> layouts;
+  final double animationValue;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final guidePaint = Paint()
-      ..color = const Color(0xFFD6DADF)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
     for (final layout in layouts) {
-      final path = Path()
-        ..moveTo(layout.start.dx, layout.start.dy)
-        ..lineTo(layout.bend.dx, layout.bend.dy)
-        ..lineTo(layout.lineEndX, layout.bend.dy);
-      canvas.drawPath(path, guidePaint);
+      final lineReveal = _staggeredPieLineRevealProgress(
+        index: layout.entry.rankIndex,
+        totalCount: layouts.length,
+        animationValue: animationValue,
+      );
+      if (lineReveal <= 0) {
+        continue;
+      }
+      final guidePaint = Paint()
+        ..color = _rankedPieBlendColor(
+          baseColor: Color(layout.entry.item.category.colorValue),
+          index: layout.entry.rankIndex,
+          totalCount: layouts.length,
+        ).withValues(alpha: lineReveal)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
+      _drawAnimatedLeaderLine(canvas, layout, lineReveal, guidePaint);
     }
   }
 
   @override
   bool shouldRepaint(covariant _PieLeaderLinesPainter oldDelegate) {
-    return oldDelegate.layouts != layouts;
+    return oldDelegate.layouts != layouts ||
+        oldDelegate.animationValue != animationValue;
   }
+}
+
+void _drawAnimatedLeaderLine(
+  Canvas canvas,
+  _PieLeaderLayout layout,
+  double progress,
+  Paint paint,
+) {
+  if (progress <= 0) {
+    return;
+  }
+
+  const firstSegmentWeight = 0.68;
+  if (progress < firstSegmentWeight) {
+    final firstT = progress / firstSegmentWeight;
+    final firstEnd = Offset(
+      layout.start.dx + (layout.bend.dx - layout.start.dx) * firstT,
+      layout.start.dy + (layout.bend.dy - layout.start.dy) * firstT,
+    );
+    canvas.drawLine(layout.start, firstEnd, paint);
+    return;
+  }
+
+  canvas.drawLine(layout.start, layout.bend, paint);
+  final secondT = (progress - firstSegmentWeight) / (1 - firstSegmentWeight);
+  final secondEnd = Offset(
+    layout.bend.dx + (layout.lineEndX - layout.bend.dx) * secondT,
+    layout.bend.dy,
+  );
+  canvas.drawLine(layout.bend, secondEnd, paint);
 }
 
 List<_PieLabelEntry> _buildPieLabelEntries(
   List<CategorySpendData> items,
-  double total,
-) {
+  double total, {
+  required TextStyle baseLabelStyle,
+  required TextDirection textDirection,
+}) {
   var currentAngle = -90.0;
   final entries = <_PieLabelEntry>[];
 
-  for (final item in items) {
+  for (final entry in items.asMap().entries) {
+    final index = entry.key;
+    final item = entry.value;
     final share = item.shareOf(total);
     final angle = share * 360.0;
     final midAngle = currentAngle + angle / 2;
     final radians = midAngle * (pi / 180.0);
+    final labelText = '${item.category.name} ${_formatPieLabelPercent(share)}%';
+    final labelStyle = _resolvePieLabelStyle(baseLabelStyle, share);
+    final labelPainter = TextPainter(
+      text: TextSpan(text: labelText, style: labelStyle),
+      maxLines: 1,
+      textDirection: textDirection,
+    )..layout();
     entries.add(
       _PieLabelEntry(
         item: item,
         percentText: _formatPieLabelPercent(share),
+        labelText: labelText,
+        labelStyle: labelStyle,
+        labelHeight: labelPainter.height + 4,
+        rankIndex: index,
         isRightSide: cos(radians) >= 0,
         angleRadians: radians,
         anchorY: sin(radians),
@@ -844,6 +1292,18 @@ List<_PieLabelEntry> _buildPieLabelEntries(
   return entries;
 }
 
+TextStyle _resolvePieLabelStyle(TextStyle baseStyle, double share) {
+  if (share < 0.03) {
+    return baseStyle.copyWith(
+        fontSize: max(10.0, (baseStyle.fontSize ?? 12) - 1.5));
+  }
+  if (share < 0.06) {
+    return baseStyle.copyWith(
+        fontSize: max(10.5, (baseStyle.fontSize ?? 12) - 1));
+  }
+  return baseStyle;
+}
+
 String _formatPieLabelPercent(double value) {
   final percent = value * 100;
   if (percent >= 10) {
@@ -852,10 +1312,128 @@ String _formatPieLabelPercent(double value) {
   return percent.toStringAsFixed(2);
 }
 
+Color _rankedPieBlendColor({
+  required Color baseColor,
+  required int index,
+  required int totalCount,
+}) {
+  if (totalCount <= 1) {
+    return baseColor;
+  }
+
+  final progress = index / (totalCount - 1);
+  final easedProgress = Curves.easeInCubic.transform(progress);
+  return Color.lerp(baseColor, Colors.white, easedProgress * 0.8) ?? baseColor;
+}
+
+double _staggeredPieSectionRevealProgress({
+  required int index,
+  required int totalCount,
+  required double animationValue,
+}) {
+  final window = _pieAnimationWindow(
+    index: index,
+    totalCount: totalCount,
+  );
+  return _curveProgress(
+    animationValue: animationValue,
+    start: window.start,
+    end: window.start + (window.length * 0.72),
+    curve: Curves.easeOutCubic,
+  );
+}
+
+double _staggeredPieRadiusRevealProgress({
+  required int index,
+  required int totalCount,
+  required double animationValue,
+}) {
+  final window = _pieAnimationWindow(
+    index: index,
+    totalCount: totalCount,
+  );
+  return _curveProgress(
+    animationValue: animationValue,
+    start: window.start,
+    end: window.start + (window.length * 0.76),
+    curve: Curves.easeOutBack,
+  ).clamp(0.0, 1.12);
+}
+
+double _staggeredPieLineRevealProgress({
+  required int index,
+  required int totalCount,
+  required double animationValue,
+}) {
+  final window = _pieAnimationWindow(
+    index: index,
+    totalCount: totalCount,
+  );
+  return _curveProgress(
+    animationValue: animationValue,
+    start: window.start + (window.length * 0.4),
+    end: window.start + (window.length * 0.92),
+    curve: Curves.easeOutCubic,
+  );
+}
+
+double _staggeredPieLabelRevealProgress({
+  required int index,
+  required int totalCount,
+  required double animationValue,
+}) {
+  final window = _pieAnimationWindow(
+    index: index,
+    totalCount: totalCount,
+  );
+  return _curveProgress(
+    animationValue: animationValue,
+    start: window.start + (window.length * 0.62),
+    end: window.end,
+    curve: Curves.easeOutCubic,
+  );
+}
+
+_PieAnimationWindow _pieAnimationWindow({
+  required int index,
+  required int totalCount,
+}) {
+  if (totalCount <= 1) {
+    return const _PieAnimationWindow(start: 0, end: 1);
+  }
+
+  const itemWindowLength = 0.44;
+  final staggerSpan = 1.0 - itemWindowLength;
+  final start = (index / (totalCount - 1)) * staggerSpan;
+  return _PieAnimationWindow(
+    start: start,
+    end: min(1.0, start + itemWindowLength),
+  );
+}
+
+double _curveProgress({
+  required double animationValue,
+  required double start,
+  required double end,
+  required Curve curve,
+}) {
+  if (end <= start) {
+    return animationValue >= end ? 1.0 : 0.0;
+  }
+
+  final normalized = ((animationValue.clamp(0.0, 1.0) - start) / (end - start))
+      .clamp(0.0, 1.0);
+  return curve.transform(normalized);
+}
+
 class _PieLabelEntry {
   const _PieLabelEntry({
     required this.item,
     required this.percentText,
+    required this.labelText,
+    required this.labelStyle,
+    required this.labelHeight,
+    required this.rankIndex,
     required this.isRightSide,
     required this.angleRadians,
     required this.anchorY,
@@ -863,9 +1441,25 @@ class _PieLabelEntry {
 
   final CategorySpendData item;
   final String percentText;
+  final String labelText;
+  final TextStyle labelStyle;
+  final double labelHeight;
+  final int rankIndex;
   final bool isRightSide;
   final double angleRadians;
   final double anchorY;
+}
+
+class _PieAnimationWindow {
+  const _PieAnimationWindow({
+    required this.start,
+    required this.end,
+  });
+
+  final double start;
+  final double end;
+
+  double get length => end - start;
 }
 
 class _PieLeaderLayout {
