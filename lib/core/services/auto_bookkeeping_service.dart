@@ -358,8 +358,8 @@ class AutoBookkeepingService {
     final combined = '$title $content';
     final match = _extractNotificationMatch(combined);
     if (match == null) return;
-    if (!_containsPaymentKeyword(combined) &&
-        !_containsPlatformKeyword(combined, '微信')) {
+    if (_looksLikePromotionalNotification(combined) ||
+        !_containsPaymentKeyword(combined)) {
       return;
     }
 
@@ -387,8 +387,8 @@ class AutoBookkeepingService {
     final combined = '$title $content';
     final match = _extractNotificationMatch(combined);
     if (match == null) return;
-    if (!_containsPaymentKeyword(combined) &&
-        !_containsPlatformKeyword(combined, '支付宝')) {
+    if (_looksLikePromotionalNotification(combined) ||
+        !_containsPaymentKeyword(combined)) {
       return;
     }
 
@@ -649,6 +649,7 @@ class AutoBookkeepingService {
     const keywords = [
       '支付',
       '付款',
+      '付了',
       '已支付',
       '支付成功',
       '收款',
@@ -657,12 +658,46 @@ class AutoBookkeepingService {
       '到账',
       '转账',
       '退款',
+      '消费',
+      '扣款',
+      '支出',
+      '入账',
+      '出账',
+      '实付',
+      '花了',
       '二维码收款',
       '动账',
+      '动账提醒',
       '账单',
       '交易',
     ];
     return keywords.any(text.contains);
+  }
+
+  bool _looksLikePromotionalNotification(String text) {
+    final compact = text.replaceAll(RegExp(r'\s+'), '');
+    if (RegExp(
+      r'满[¥￥]?\d+(?:\.\d+)?(?:元|月|次|笔)?[^，。,.]{0,6}减[¥￥]?\d+(?:\.\d+)?元?',
+    ).hasMatch(compact)) {
+      return true;
+    }
+    if (RegExp(
+      r'第\d+(?:笔|单)?[^，。,.]{0,6}减[¥￥]?\d+(?:\.\d+)?元?',
+    ).hasMatch(compact)) {
+      return true;
+    }
+    const promoKeywords = [
+      '优惠券',
+      '立减',
+      '满减',
+      '减免',
+      '红包',
+      '返现',
+      '补贴',
+      '福利金',
+      '折扣',
+    ];
+    return promoKeywords.any(text.contains) && !_containsPaymentKeyword(text);
   }
 
   bool _looksLikeIncome(String text) {
@@ -670,15 +705,6 @@ class AutoBookkeepingService {
         text.contains('到账') ||
         text.contains('退款') ||
         text.contains('转入');
-  }
-
-  bool _containsPlatformKeyword(String text, String platform) {
-    if (platform == '微信') {
-      return text.contains('微信') ||
-          text.contains('微信支付') ||
-          text.contains('微信支付助手');
-    }
-    return text.contains('支付宝') || text.contains('支付宝提醒');
   }
 
   _AccessibilityTargetPage? _detectAccessibilityTargetPage(
