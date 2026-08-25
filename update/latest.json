@@ -1,8 +1,8 @@
 {
-  "version": "1.0.0",
-  "build": 1,
-  "notes": "初始版本清单示例。发布新版本后，请把这里的 version、build、notes 和 apk_url 更新到最新值。",
-  "apk_url": "",
-  "page_url": "https://github.com/Biscuits47/PocketMeow",
-  "published_at": "2026-07-01T20:00:00+08:00"
+  "version": "1.1.5",
+  "build": 1004009,
+  "notes": "修复长时间后台后自动记账监听失效，优化应用恢复与批量补账性能。",
+  "apk_url": "https://github.com/Biscuits47/PocketMeow/releases/download/v1.1.5/PocketMeow_v1.1.5_arm64.apk",
+  "page_url": "https://github.com/Biscuits47/PocketMeow/releases/tag/v1.1.5",
+  "published_at": "2026-08-26T00:00:21+08:00"
 }

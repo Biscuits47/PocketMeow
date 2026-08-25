@@ -26,9 +26,9 @@
 
 By default, the app tries these manifest URLs:
 
-- `https://cdn.jsdelivr.net/gh/Biscuits47/PocketMeow@main/update/latest.json`
-- `https://fastly.jsdelivr.net/gh/Biscuits47/PocketMeow@main/update/latest.json`
-- `https://raw.githubusercontent.com/Biscuits47/PocketMeow/main/update/latest.json`
+- `https://cdn.jsdelivr.net/gh/Biscuits47/PocketMeow@master/update/latest.json`
+- `https://fastly.jsdelivr.net/gh/Biscuits47/PocketMeow@master/update/latest.json`
+- `https://raw.githubusercontent.com/Biscuits47/PocketMeow/master/update/latest.json`
 
 For domestic deployment, it is recommended to override them at build time:
 

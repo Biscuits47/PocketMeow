@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../core/services/auto_bookkeeping_service.dart';
@@ -8,45 +7,6 @@ import '../../data/local/app_storage.dart';
 import '../../data/models/app_models.dart';
 
 enum ReportType { weekly, monthly, yearly }
-
-void _reportStoreDebugEvent({
-  required String hypothesisId,
-  required String location,
-  required String message,
-  Map<String, Object?> data = const {},
-}) {
-  (() async {
-    var serverUrl = 'http://192.168.31.33:7777/event';
-    const sessionId = 'auto-bookkeeping-crash';
-    try {
-      final env = await File('.dbg/auto-bookkeeping-crash.env').readAsString();
-      for (final line in env.split('\n')) {
-        if (line.startsWith('DEBUG_SERVER_URL=')) {
-          serverUrl = line.substring('DEBUG_SERVER_URL='.length).trim();
-        }
-      }
-    } catch (_) {}
-    final client = HttpClient();
-    try {
-      final request = await client.postUrl(Uri.parse(serverUrl));
-      request.headers.contentType = ContentType.json;
-      request.write(jsonEncode({
-        'sessionId': sessionId,
-        'runId': 'post-fix',
-        'hypothesisId': hypothesisId,
-        'location': location,
-        'msg': '[DEBUG] $message',
-        'data': data,
-        'ts': DateTime.now().millisecondsSinceEpoch,
-      }));
-      final response = await request.close();
-      await response.drain<void>();
-    } catch (_) {
-    } finally {
-      client.close(force: true);
-    }
-  })();
-}
 
 class PocketMeowStore extends ChangeNotifier {
   PocketMeowStore({AppStorage? storage}) : _storage = storage ?? AppStorage() {
@@ -96,6 +56,7 @@ class PocketMeowStore extends ChangeNotifier {
 
   List<ExpenseCategory> _categories = const [];
   List<ExpenseRecord> _records = const [];
+  Timer? _autoRecordNotifyTimer;
 
   bool get isReady => _isReady;
   bool get isAutoBookkeepingEnabled => _isAutoBookkeepingEnabled;
@@ -649,8 +610,22 @@ class PocketMeowStore extends ChangeNotifier {
       isManuallyEdited: isManuallyEdited,
     );
     _records = [..._records, record];
-    _persist();
-    notifyListeners();
+    // Adding one record should be an O(1) insert. Rewriting every table and
+    // every historical record here makes a burst of recovered auto-bookkeeping
+    // events increasingly expensive as the database grows.
+    unawaited(_storage.saveRecord(record));
+    if (source == null) {
+      notifyListeners();
+    } else {
+      _scheduleAutoRecordNotify();
+    }
+  }
+
+  void _scheduleAutoRecordNotify() {
+    _autoRecordNotifyTimer ??= Timer(const Duration(milliseconds: 150), () {
+      _autoRecordNotifyTimer = null;
+      notifyListeners();
+    });
   }
 
   String _normalizeDedupNote(String note) {
@@ -765,33 +740,13 @@ class PocketMeowStore extends ChangeNotifier {
   }
 
   Future<void> refreshAutoBookkeepingListening() async {
-    // #region debug-point A:refresh-auto-bookkeeping
-    _reportStoreDebugEvent(
-      hypothesisId: 'A',
-      location: 'pocket_meow_store.dart:refreshAutoBookkeepingListening',
-      message: 'Refreshing auto bookkeeping listening state',
-      data: {
-        'enabled': _isAutoBookkeepingEnabled,
-        'ready': _isReady,
-      },
-    );
-    // #endregion
     if (!_isAutoBookkeepingEnabled) return;
     await autoBookkeepingService.syncListeningWithPermissions();
-    // #region debug-point A:refresh-auto-bookkeeping-done
-    _reportStoreDebugEvent(
-      hypothesisId: 'A',
-      location: 'pocket_meow_store.dart:refreshAutoBookkeepingListening',
-      message: 'Finished refreshing auto bookkeeping listening state',
-      data: {
-        'serviceIsListening': autoBookkeepingService.isListening,
-      },
-    );
-    // #endregion
   }
 
   @override
   void dispose() {
+    _autoRecordNotifyTimer?.cancel();
     autoBookkeepingService.stopListening();
     super.dispose();
   }

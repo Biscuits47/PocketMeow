@@ -95,9 +95,6 @@ public class AccessibilityListener extends AccessibilityService {
             if (!ALLOWED_PACKAGES.contains(packageName)) {
                 return;
             }
-            if (!shouldCaptureTargetPage(packageName, parentNodeInfo)) {
-                return;
-            }
             storeNode(nodeId, parentNodeInfo);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 windowInfo = parentNodeInfo.getWindow();

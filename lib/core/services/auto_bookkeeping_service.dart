@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
@@ -15,45 +13,6 @@ enum _AccessibilityTargetPage {
   paymentSuccess,
   billDetail,
   billList,
-}
-
-void _reportAutoBookkeepingDebugEvent({
-  required String hypothesisId,
-  required String location,
-  required String message,
-  Map<String, Object?> data = const {},
-}) {
-  (() async {
-    var serverUrl = 'http://192.168.31.33:7777/event';
-    const sessionId = 'auto-bookkeeping-crash';
-    try {
-      final env = await File('.dbg/auto-bookkeeping-crash.env').readAsString();
-      for (final line in env.split('\n')) {
-        if (line.startsWith('DEBUG_SERVER_URL=')) {
-          serverUrl = line.substring('DEBUG_SERVER_URL='.length).trim();
-        }
-      }
-    } catch (_) {}
-    final client = HttpClient();
-    try {
-      final request = await client.postUrl(Uri.parse(serverUrl));
-      request.headers.contentType = ContentType.json;
-      request.write(jsonEncode({
-        'sessionId': sessionId,
-        'runId': 'post-fix',
-        'hypothesisId': hypothesisId,
-        'location': location,
-        'msg': '[DEBUG] $message',
-        'data': data,
-        'ts': DateTime.now().millisecondsSinceEpoch,
-      }));
-      final response = await request.close();
-      await response.drain<void>();
-    } catch (_) {
-    } finally {
-      client.close(force: true);
-    }
-  })();
 }
 
 class AutoBookkeepingService {
@@ -82,49 +41,27 @@ class AutoBookkeepingService {
   final Map<String, String> _lastSnapshotKeys = {};
 
   bool _isListening = false;
+  Future<void>? _syncInFlight;
   int _startSessionToken = 0;
+  bool _cachedNotificationGranted = false;
+  bool _cachedAccessibilityGranted = false;
+  DateTime? _lastPermissionCheck;
+  static const Duration _permissionCacheDuration = Duration(seconds: 30);
   bool get isListening => _isListening;
 
   Future<void> startListening({
     bool forceRestart = false,
     bool scheduleWarmUp = true,
   }) async {
-    // #region debug-point A:start-listening-entry
-    _reportAutoBookkeepingDebugEvent(
-      hypothesisId: 'A',
-      location: 'auto_bookkeeping_service.dart:startListening',
-      message: 'startListening entered',
-      data: {
-        'forceRestart': forceRestart,
-        'scheduleWarmUp': scheduleWarmUp,
-        'isListening': _isListening,
-        'hasNotificationSub': _notificationSub != null,
-        'hasAccessibilitySub': _accessibilitySub != null,
-      },
-    );
-    // #endregion
     if (!_supportsAutoBookkeepingPlatform) {
       stopListening();
       return;
     }
 
-    final notifGranted = await _safeNotificationPermissionGranted();
-    final accGranted = await _safeAccessibilityPermissionEnabled();
+    final notifGranted = await _cachedNotificationPermissionGranted();
+    final accGranted = await _cachedAccessibilityPermissionEnabled();
     final hasNotificationSub = _notificationSub != null;
     final hasAccessibilitySub = _accessibilitySub != null;
-    // #region debug-point A:start-listening-permissions
-    _reportAutoBookkeepingDebugEvent(
-      hypothesisId: 'A',
-      location: 'auto_bookkeeping_service.dart:startListening',
-      message: 'Resolved startListening permissions',
-      data: {
-        'notifGranted': notifGranted,
-        'accGranted': accGranted,
-        'hasNotificationSub': hasNotificationSub,
-        'hasAccessibilitySub': hasAccessibilitySub,
-      },
-    );
-    // #endregion
     if (!forceRestart &&
         _isListening &&
         hasNotificationSub == notifGranted &&
@@ -133,7 +70,7 @@ class AutoBookkeepingService {
     }
 
     if (hasNotificationSub || hasAccessibilitySub) {
-      stopListening();
+      await _stopListening();
     }
 
     var hasSubscription = false;
@@ -143,18 +80,6 @@ class AutoBookkeepingService {
       _notificationSub = NotificationListenerService.notificationsStream.listen(
         _onNotification,
         onError: (Object error, StackTrace stackTrace) {
-          // #region debug-point E:notification-stream-error
-          _reportAutoBookkeepingDebugEvent(
-            hypothesisId: 'E',
-            location:
-                'auto_bookkeeping_service.dart:notificationStream.onError',
-            message: 'Notification stream emitted error',
-            data: {
-              'error': error.toString(),
-              'stack': stackTrace.toString(),
-            },
-          );
-          // #endregion
           debugPrint('AutoBookkeeping: notification stream error: $error');
         },
       );
@@ -165,18 +90,6 @@ class AutoBookkeepingService {
       _accessibilitySub = FlutterAccessibilityService.accessStream.listen(
         _onAccessibilityEvent,
         onError: (Object error, StackTrace stackTrace) {
-          // #region debug-point E:accessibility-stream-error
-          _reportAutoBookkeepingDebugEvent(
-            hypothesisId: 'E',
-            location:
-                'auto_bookkeeping_service.dart:accessibilityStream.onError',
-            message: 'Accessibility stream emitted error',
-            data: {
-              'error': error.toString(),
-              'stack': stackTrace.toString(),
-            },
-          );
-          // #endregion
           debugPrint('AutoBookkeeping: accessibility stream error: $error');
         },
       );
@@ -185,17 +98,6 @@ class AutoBookkeepingService {
 
     _isListening = hasSubscription;
     _cancelWarmUpRetries();
-    // #region debug-point A:start-listening-result
-    _reportAutoBookkeepingDebugEvent(
-      hypothesisId: 'A',
-      location: 'auto_bookkeeping_service.dart:startListening',
-      message: 'startListening finished',
-      data: {
-        'isListening': _isListening,
-        'hasSubscription': hasSubscription,
-      },
-    );
-    // #endregion
     if (!_isListening) {
       debugPrint('AutoBookkeeping: permissions missing, listener not started');
       return;
@@ -207,58 +109,79 @@ class AutoBookkeepingService {
   }
 
   Future<void> restartListening() async {
-    stopListening();
+    await _stopListening();
     await startListening(forceRestart: true);
   }
 
   Future<void> syncListeningWithPermissions() async {
-    // #region debug-point A:sync-listening-entry
-    _reportAutoBookkeepingDebugEvent(
-      hypothesisId: 'A',
-      location: 'auto_bookkeeping_service.dart:syncListeningWithPermissions',
-      message: 'syncListeningWithPermissions entered',
-      data: {
-        'isListening': _isListening,
-      },
-    );
-    // #endregion
+    final syncInFlight = _syncInFlight;
+    if (syncInFlight != null) {
+      return syncInFlight;
+    }
+
+    final sync = _syncListeningWithPermissions();
+    _syncInFlight = sync;
+    try {
+      await sync;
+    } finally {
+      if (identical(_syncInFlight, sync)) {
+        _syncInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _syncListeningWithPermissions() async {
     if (!_supportsAutoBookkeepingPlatform) {
-      stopListening();
+      await _stopListening();
       return;
     }
 
+    // A foreground sync is also used immediately after the user changes a
+    // system permission, so bypass the short-lived cache here.
     final notifGranted = await _safeNotificationPermissionGranted();
     final accGranted = await _safeAccessibilityPermissionEnabled();
+    _cachedNotificationGranted = notifGranted;
+    _cachedAccessibilityGranted = accGranted;
+    _lastPermissionCheck = DateTime.now();
 
     if (!notifGranted && !accGranted) {
-      stopListening();
+      await _stopListening();
       return;
     }
 
-    await startListening();
-    // #region debug-point A:sync-listening-result
-    _reportAutoBookkeepingDebugEvent(
-      hypothesisId: 'A',
-      location: 'auto_bookkeeping_service.dart:syncListeningWithPermissions',
-      message: 'syncListeningWithPermissions finished',
-      data: {
-        'notifGranted': notifGranted,
-        'accGranted': accGranted,
-        'isListening': _isListening,
-      },
-    );
-    // #endregion
+    // A Dart StreamSubscription can stay non-null after Android has killed or
+    // disconnected the backing notification/accessibility service. A resume
+    // sync must therefore rebuild the platform streams instead of trusting the
+    // local subscription flags.
+    await startListening(forceRestart: true, scheduleWarmUp: false);
   }
 
   void stopListening() {
+    unawaited(_stopListening());
+  }
+
+  Future<void> _stopListening() async {
     _cancelWarmUpRetries();
-    _notificationSub?.cancel();
-    _accessibilitySub?.cancel();
+    final notificationSub = _notificationSub;
+    final accessibilitySub = _accessibilitySub;
     _notificationSub = null;
     _accessibilitySub = null;
     _lastSnapshotTimes.clear();
     _lastSnapshotKeys.clear();
     _isListening = false;
+
+    // EventChannel cancellation is asynchronous. Waiting here prevents a new
+    // listener from racing the old platform receiver's onCancel callback.
+    try {
+      await notificationSub?.cancel();
+    } catch (error) {
+      debugPrint('AutoBookkeeping: notification stream cancel failed: $error');
+    }
+    try {
+      await accessibilitySub?.cancel();
+    } catch (error) {
+      debugPrint('AutoBookkeeping: accessibility stream cancel failed: $error');
+    }
   }
 
   void _onNotification(ServiceNotificationEvent event) {
@@ -269,20 +192,6 @@ class AutoBookkeepingService {
     final createdAt = event.timestamp > 0
         ? DateTime.fromMillisecondsSinceEpoch(event.timestamp)
         : DateTime.now();
-    // #region debug-point C:notification-event
-    _reportAutoBookkeepingDebugEvent(
-      hypothesisId: 'C',
-      location: 'auto_bookkeeping_service.dart:_onNotification',
-      message: 'Received notification event',
-      data: {
-        'packageName': pkg,
-        'title': title,
-        'content': content,
-        'timestamp': createdAt.toIso8601String(),
-      },
-    );
-    // #endregion
-
     if (pkg.contains('com.tencent.mm')) {
       _parseWeChat(title, content, createdAt: createdAt);
     } else if (pkg.contains('com.eg.android.AlipayGphone')) {
@@ -301,19 +210,6 @@ class AutoBookkeepingService {
       return;
     }
     final targetPage = _detectAccessibilityTargetPage(pkg, text, event);
-    // #region debug-point B:accessibility-gate
-    _reportAutoBookkeepingDebugEvent(
-      hypothesisId: 'B',
-      location: 'auto_bookkeeping_service.dart:_onAccessibilityEvent',
-      message: 'Processed accessibility event gate',
-      data: {
-        'packageName': pkg,
-        'textPreview': text.length > 80 ? text.substring(0, 80) : text,
-        'targetPage': targetPage?.name,
-        'subNodeCount': event.subNodes?.length ?? 0,
-      },
-    );
-    // #endregion
     if (targetPage == null) {
       return;
     }
@@ -609,6 +505,30 @@ class AutoBookkeepingService {
     } on PlatformException {
       return false;
     }
+  }
+
+  Future<bool> _cachedNotificationPermissionGranted() async {
+    if (_lastPermissionCheck != null &&
+        DateTime.now().difference(_lastPermissionCheck!) <
+            _permissionCacheDuration) {
+      return _cachedNotificationGranted;
+    }
+    _cachedNotificationGranted = await _safeNotificationPermissionGranted();
+    _cachedAccessibilityGranted = await _safeAccessibilityPermissionEnabled();
+    _lastPermissionCheck = DateTime.now();
+    return _cachedNotificationGranted;
+  }
+
+  Future<bool> _cachedAccessibilityPermissionEnabled() async {
+    if (_lastPermissionCheck != null &&
+        DateTime.now().difference(_lastPermissionCheck!) <
+            _permissionCacheDuration) {
+      return _cachedAccessibilityGranted;
+    }
+    _cachedNotificationGranted = await _safeNotificationPermissionGranted();
+    _cachedAccessibilityGranted = await _safeAccessibilityPermissionEnabled();
+    _lastPermissionCheck = DateTime.now();
+    return _cachedAccessibilityGranted;
   }
 
   void _scheduleWarmUpRetries() {
@@ -1090,8 +1010,9 @@ class AutoBookkeepingService {
       createdAt: timeToUse,
     );
 
-    if (_hasRecentMemoryDuplicate(signature) ||
-        _hasStoredDuplicate(signature)) {
+    final hasRecentDuplicate = _hasRecentMemoryDuplicate(signature);
+    final hasStoredDuplicate = _hasStoredDuplicate(signature);
+    if (hasRecentDuplicate || hasStoredDuplicate) {
       debugPrint(
           'AutoBookkeeping: Ignored duplicate transaction ${signature.debugKey}');
       return;

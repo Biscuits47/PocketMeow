@@ -42,9 +42,9 @@ class AppUpdateService {
   static const _manifestRequestTimeout = Duration(seconds: 4);
   static const _downloadProbeTimeout = Duration(seconds: 2);
   static const _defaultManifestUrls = [
-    'https://cdn.jsdelivr.net/gh/Biscuits47/PocketMeow@main/update/latest.json',
-    'https://fastly.jsdelivr.net/gh/Biscuits47/PocketMeow@main/update/latest.json',
-    'https://raw.githubusercontent.com/Biscuits47/PocketMeow/main/update/latest.json',
+    'https://cdn.jsdelivr.net/gh/Biscuits47/PocketMeow@master/update/latest.json',
+    'https://fastly.jsdelivr.net/gh/Biscuits47/PocketMeow@master/update/latest.json',
+    'https://raw.githubusercontent.com/Biscuits47/PocketMeow/master/update/latest.json',
     'https://api.github.com/repos/Biscuits47/PocketMeow/releases/latest',
   ];
   static const _downloadProxyEntries = [

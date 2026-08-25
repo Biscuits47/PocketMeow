@@ -421,6 +421,15 @@ class AppStorage {
     );
   }
 
+  Future<void> saveRecord(ExpenseRecord record) async {
+    final db = await database;
+    await db.insert(
+      'records',
+      _recordToRow(record),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
   Future<void> saveSnapshot(AppSnapshot snapshot) async {
     final db = await database;
     await db.transaction((txn) async {
@@ -466,17 +475,7 @@ class AppStorage {
       for (final expense in snapshot.expenses) {
         await txn.insert(
           'records',
-          {
-            'id': expense.id,
-            'amount': expense.amount,
-            'categoryId': expense.categoryId,
-            'note': expense.note,
-            'createdAt': expense.createdAt.toIso8601String(),
-            'type': expense.type.key,
-            'excludeFromBudget': expense.excludeFromBudget ? 1 : 0,
-            'source': expense.source?.key,
-            'isManuallyEdited': expense.isManuallyEdited ? 1 : 0,
-          },
+          _recordToRow(expense),
         );
       }
 
@@ -524,5 +523,19 @@ class AppStorage {
         );
       }
     });
+  }
+
+  Map<String, Object?> _recordToRow(ExpenseRecord record) {
+    return {
+      'id': record.id,
+      'amount': record.amount,
+      'categoryId': record.categoryId,
+      'note': record.note,
+      'createdAt': record.createdAt.toIso8601String(),
+      'type': record.type.key,
+      'excludeFromBudget': record.excludeFromBudget ? 1 : 0,
+      'source': record.source?.key,
+      'isManuallyEdited': record.isManuallyEdited ? 1 : 0,
+    };
   }
 }
